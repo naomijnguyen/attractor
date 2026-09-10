@@ -9,6 +9,11 @@ export interface Env {
   /** Anthropic API key. Set via `wrangler secret put ANTHROPIC_API_KEY`. */
   ANTHROPIC_API_KEY: string;
   /**
+   * Shared bearer token guarding every route.
+   * Set via `wrangler secret put ATTRACTOR_TOKEN`. Requests fail closed if unset.
+   */
+  ATTRACTOR_TOKEN: string;
+  /**
    * Whose engagement this attractor models. Injected into the update prompt
    * and the system-prompt context block. Defaults to "the user".
    */

@@ -16,3 +16,11 @@ queue = "attractor-jobs"
 
 # ANTHROPIC_API_KEY is a secret, never a var. Set it with:
 #   wrangler secret put ANTHROPIC_API_KEY
+
+[vars]
+# Whose engagement this attractor models. Appears in the update prompt and in
+# the system-prompt context block. Defaults to "the user" if unset.
+ATTRACTOR_SUBJECT = "the user"
+
+# ATTRACTOR_TOKEN is a secret, never a var. Every route requires it:
+#   wrangler secret put ATTRACTOR_TOKEN

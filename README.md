@@ -77,13 +77,18 @@ npm install
 wrangler kv namespace create MODEL_KV     # put the id in wrangler.toml
 wrangler queues create attractor-jobs
 wrangler secret put ANTHROPIC_API_KEY
+wrangler secret put ATTRACTOR_TOKEN     # every route requires this
 wrangler deploy
 ```
+
+Set `ATTRACTOR_SUBJECT` in `wrangler.toml` to whoever the attractor models —
+it appears in the update prompt and in the injected context block.
 
 Then seed it with your starting basins:
 
 ```bash
 curl -X POST "$API/api/attractor/seed" \
+  -H "Authorization: Bearer $ATTRACTOR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"basins":[
         {"label":"Research methodology","description":"Study design, controls, what makes a result trustworthy","keywords":["assay","controls","replication"]},
