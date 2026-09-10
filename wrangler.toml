@@ -1,0 +1,18 @@
+name = "attractor"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+# KV namespace holding attractor:state and attractor:history.
+# Create with:  wrangler kv namespace create MODEL_KV
+[[kv_namespaces]]
+binding = "MODEL_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Queue used by POST /api/attractor/trigger to enqueue background updates.
+# Create with:  wrangler queues create attractor-jobs
+[[queues.producers]]
+binding = "JOBS"
+queue = "attractor-jobs"
+
+# ANTHROPIC_API_KEY is a secret, never a var. Set it with:
+#   wrangler secret put ANTHROPIC_API_KEY

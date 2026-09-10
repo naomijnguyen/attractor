@@ -1,0 +1,19 @@
+{
+  "name": "attractor",
+  "version": "0.1.0",
+  "description": "A persistent topological memory structure that tracks how modes of engagement evolve across conversations.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Jennifer Naomi Nguyen",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "example": "esbuild examples/walkthrough.ts --bundle --format=esm --outfile=.wrangler/example.mjs --log-level=error && node .wrangler/example.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250109.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^3.99.0"
+  }
+}
