@@ -130,12 +130,32 @@ cli/attractor history    # weight evolution table over time
 ```
   Attractor
   ========================================
-  Phase 2 | Entropy: 0.847 | CONVERGING
-  Updates: 31 | Dominant: systems-architecture
+  Phase 1 | Entropy: 0.978 | CONVERGING
+  Updates: 6 | Dominant: context-architecture
 
-  Systems architecture  72.0% ^^  [######################........]  (14 convos)
-                     -> research-methodology
-  Research methodology  54.0% ~   [################..............]  (9 convos)
+  Context architecture 100.0% ^  [##############################]  (5 convos)
+                       -> systems-design, immunology
+  Systems design        80.5% ^^ [########################......]  (3 convos)
+                       -> context-architecture
+  Immunology            77.8% ~  [#######################.......]  (3 convos)
+                       -> context-architecture, creative-writing
+  Creative writing      58.8% ~  [#################.............]  (1 convo)
+                       -> immunology
+  Bench assays          44.7% ~  [#############.................]  (0 convos)
+
+  Emerging patterns:
+    * emergent persistence
+```
+
+`attractor history` shows the same weights as a table over time:
+
+```
+Timestamp          Context Architec.        Immunology    Systems Design  Creative Writing
+------------------------------------------------------------------------------------------
+2026-06-06 09:00    68% #######...    49% #####.....    62% ######....    49% #####.....
+2026-06-14 09:00    93% #########.    62% ######....    70% #######...    47% #####.....
+2026-06-22 09:00    96% ##########    80% ########..    66% #######...    60% ######....
+2026-06-26 09:00   100% ##########    78% ########..    80% ########..    59% ######....
 ```
 
 ---

@@ -32,23 +32,29 @@ if not history:
 # Get all basin IDs from the first snapshot
 basin_ids = [b['id'] for b in history[0]['basins']]
 
+# Each column: 4-char percentage + '% ' + 10-char bar + 2-char gutter = 18
+COL = 18
+
 # Header
-print(f\"{'Timestamp':<22}\", end='')
+print(f\"{'Timestamp':<18}\", end='')
 for bid in basin_ids:
-    label = bid[:10].title()
-    print(f'{label:>12}', end='')
+    label = bid.replace('-', ' ').title()
+    if len(label) > COL - 1:
+        label = label[:COL - 2] + '.'
+    print(f'{label:>{COL}}', end='')
 print()
-print('-' * (22 + 12 * len(basin_ids)))
+print('-' * (18 + COL * len(basin_ids)))
 
 # Rows
 for snap in history:
     ts = snap['timestamp'][:16].replace('T', ' ')
-    print(f'{ts:<22}', end='')
+    print(f'{ts:<18}', end='')
     weights = {b['id']: b['weight'] for b in snap['basins']}
     for bid in basin_ids:
         w = weights.get(bid, 0)
-        bar = round(w * 10) * '|'
-        print(f'{w*100:>6.0f}% {bar:<4}', end='')
+        filled = round(w * 10)
+        bar = '#' * filled + '.' * (10 - filled)
+        print(f'{w*100:>4.0f}% {bar}  ', end='')
     print()
 "
 else
@@ -79,6 +85,9 @@ print()
 # Sort basins by weight
 basins = sorted(d['basins'], key=lambda x: -x['weight'])
 
+# Pad to the longest label so columns line up whatever the basins are called
+w = max(len(b['label']) for b in basins)
+
 # Find max weight for bar scaling
 max_w = max(b['weight'] for b in basins)
 
@@ -101,11 +110,12 @@ for b in basins:
     bar_len = int((weight / 1.0) * 30)
     bar = '#' * bar_len + '.' * (30 - bar_len)
 
-    print(f'  {label:<18} {pct:5.1f}%{arrow}  [{bar}]  ({convos} convos)')
+    plural = 'convo' if convos == 1 else 'convos'
+    print(f'  {label:<{w}} {pct:5.1f}%{arrow:<3} [{bar}]  ({convos} {plural})')
 
     # Show connections indented
     if conns:
-        print(f'                     -> {", ".join(conns)}')
+        print(f'  {"":<{w}} -> {", ".join(conns)}')
 
 # Emerging patterns
 if d.get('emerging'):
