@@ -17,11 +17,13 @@ export interface Engine {
     vibes: string[],
   ): Promise<AttractorUpdate>;
   /** Free-form call, used for summarizing a raw transcript. */
-  complete(prompt: string, maxTokens?: number): Promise<string>;
+  complete(prompt: string, model?: string, maxTokens?: number): Promise<string>;
 }
 
-const UPDATE_MODEL = "claude-opus-4-6";
-const SUMMARY_MODEL = "claude-haiku-4-5-20251001";
+/** Generating an update needs judgement about what a conversation meant. */
+export const UPDATE_MODEL = "claude-opus-4-6";
+/** Summarizing a transcript does not, so route it to something cheap. */
+export const SUMMARY_MODEL = "claude-haiku-4-5-20251001";
 
 // === Anthropic HTTP API ===
 
@@ -52,8 +54,8 @@ export class ApiEngine implements Engine {
     return result.content[0]?.text ?? "";
   }
 
-  async complete(prompt: string, maxTokens = 300): Promise<string> {
-    return this.call("", prompt, SUMMARY_MODEL, maxTokens);
+  async complete(prompt: string, model = SUMMARY_MODEL, maxTokens = 300): Promise<string> {
+    return this.call("", prompt, model, maxTokens);
   }
 
   async generateUpdate(state: AttractorState, summary: string, vibes: string[]): Promise<AttractorUpdate> {
@@ -93,10 +95,13 @@ export class ClaudeCliEngine implements Engine {
     });
   }
 
-  async complete(prompt: string): Promise<string> {
+  async complete(prompt: string, model = SUMMARY_MODEL): Promise<string> {
     const { spawn } = await import("node:child_process");
     return new Promise((resolve, reject) => {
-      const proc = spawn(this.bin, ["-p"], { stdio: ["pipe", "pipe", "pipe"] });
+      // Without --model, `claude -p` inherits whatever model the user's Claude
+      // Code session is set to -- so summarizing would run on Opus and the two
+      // engines would behave differently for the same work.
+      const proc = spawn(this.bin, ["-p", "--model", model], { stdio: ["pipe", "pipe", "pipe"] });
       let out = "";
       let err = "";
       proc.stdout.on("data", (d) => (out += d));
@@ -119,7 +124,7 @@ export class ClaudeCliEngine implements Engine {
     const prompt =
       buildUpdatePrompt(state, summary, vibes, this.subject) +
       "\n\nGenerate the attractor update for this conversation.";
-    return parseUpdate(await this.complete(prompt));
+    return parseUpdate(await this.complete(prompt, UPDATE_MODEL));
   }
 }
 

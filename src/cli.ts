@@ -14,7 +14,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { applyUpdate, buildAttractorContext, createInitialState } from "./model";
-import { ClaudeCliEngine, type Engine } from "./engine";
+import { ClaudeCliEngine, SUMMARY_MODEL, type Engine } from "./engine";
 import { renderHistory, renderState } from "./render";
 import { FileStore } from "./store";
 import type { BasinSeed } from "./types";
@@ -41,7 +41,7 @@ async function requireState(store: FileStore) {
 
 async function summarize(engine: Engine, transcript: string) {
   const capped = transcript.length > 40000 ? transcript.slice(-40000) : transcript;
-  const raw = await engine.complete(SUMMARY_PROMPT + capped);
+  const raw = await engine.complete(SUMMARY_PROMPT + capped, SUMMARY_MODEL);
   const clean = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
   try {
     const parsed = JSON.parse(clean) as { summary: string; vibes?: string[] };
