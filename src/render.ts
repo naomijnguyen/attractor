@@ -1,4 +1,5 @@
-import type { AttractorState, HistorySnapshot } from "./types";
+import type { SessionInfo } from "./sessions";
+import type { AttractorState, AttractorUpdate, HistorySnapshot } from "./types";
 
 /**
  * Terminal rendering. Matches the output of the bash `cli/attractor` viewer so
@@ -86,6 +87,100 @@ export function renderHistory(history: HistorySnapshot[]): string {
       })
       .join("");
     out.push(ts.padEnd(18) + row);
+  }
+  return out.join("\n");
+}
+
+// === Claude Code sessions ===
+
+
+export function renderSessions(sessions: SessionInfo[]): string {
+  const w = Math.min(40, Math.max(...sessions.map((s) => s.project.length)));
+  const out = ["", `  ${sessions.length} session(s), newest first`, ""];
+  for (const s of sessions.slice(0, 25)) {
+    const project = (s.project.length > w ? s.project.slice(0, w - 1) + "." : s.project).padEnd(w);
+    const when = s.modified.toISOString().slice(0, 16).replace("T", " ");
+    out.push(`  ${when}  ${project}  ${String(s.messages).padStart(4)} msgs  ${s.id.slice(0, 8)}`);
+  }
+  if (sessions.length > 25) out.push(`  ... and ${sessions.length - 25} more`);
+  out.push("");
+  return out.join("\n");
+}
+
+// === Model comparison ===
+
+export interface ComparisonResult {
+  model: string;
+  summary?: string;
+  vibes?: string[];
+  update?: AttractorUpdate;
+  next?: AttractorState;
+  error?: string;
+}
+
+function wrap(text: string, width: number, indent: string): string {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    if (line.length + word.length + 1 > width) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = line ? `${line} ${word}` : word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.map((l) => indent + l).join("\n");
+}
+
+/**
+ * Side-by-side view of what each model would do to the same state.
+ * Read-only: nothing here is saved.
+ */
+export function renderComparison(before: AttractorState, results: ComparisonResult[]): string {
+  const out = [
+    "",
+    `  Same conversation, ${results.length} model(s). Nothing saved.`,
+    `  Starting entropy ${before.entropy.toFixed(3)}, ${before.meta.recentTrajectory}`,
+    "",
+  ];
+
+  for (const r of results) {
+    out.push(`  ${"─".repeat(70)}`, `  ${r.model}`, "");
+    if (r.error || !r.update || !r.next) {
+      out.push(`    failed: ${r.error ?? "no update returned"}`, "");
+      continue;
+    }
+
+    out.push(wrap(r.summary ?? "", 66, "    "), "");
+    out.push(`    vibes: ${r.vibes?.join(", ") || "none"}`, "");
+
+    const deltas = r.update.basin_updates
+      .map((bu) => {
+        const label = before.basins.find((b) => b.id === bu.id)?.label ?? bu.id;
+        const sign = bu.weight_delta >= 0 ? "+" : "";
+        return `      ${label.padEnd(22)} ${sign}${bu.weight_delta.toFixed(2)}`;
+      })
+      .join("\n");
+    out.push(`    basin deltas (${r.update.basin_updates.length}):`, deltas || "      none", "");
+
+    if (r.update.new_connections.length > 0) {
+      out.push("    connections proposed:");
+      for (const c of r.update.new_connections) out.push(`      ${c.from} <-> ${c.to}`);
+      out.push("");
+    }
+    if (r.update.emerging_patterns.length > 0) {
+      out.push("    emerging:", ...r.update.emerging_patterns.map((e) => `      * ${e}`), "");
+    }
+    if (r.update.new_basin) out.push(`    new basin proposed: ${r.update.new_basin.label}`, "");
+
+    out.push(
+      `    result: entropy ${r.next.entropy.toFixed(3)} ` +
+        `(${(r.next.entropy - before.entropy >= 0 ? "+" : "")}${(r.next.entropy - before.entropy).toFixed(3)}), ` +
+        `${r.next.meta.recentTrajectory}, dominant ${r.next.meta.dominantBasin}`,
+      "",
+    );
   }
   return out.join("\n");
 }

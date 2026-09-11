@@ -105,10 +105,33 @@ EOF
 
 ./dist/attractor.mjs seed basins.json
 ./dist/attractor.mjs ingest conversation.txt   # or - for stdin
+./dist/attractor.mjs ingest --session          # your latest Claude Code session
+./dist/attractor.mjs sessions                  # list Claude Code sessions
 ./dist/attractor.mjs                           # show current state
 ./dist/attractor.mjs history                   # weight evolution
 ./dist/attractor.mjs context                   # the system-prompt block
 ```
+
+`ingest --session` reads Claude Code's own transcripts from
+`~/.claude/projects/`, so you can feed it real conversations without exporting
+anything. `--session <filter>` narrows to a project directory; `sessions` lists
+what's there.
+
+### Comparing models
+
+```bash
+./dist/attractor.mjs compare conversation.txt
+```
+
+Runs the same conversation through several models and shows what each *would*
+do — summary, vibes, basin deltas, proposed connections, resulting entropy.
+Nothing is saved. Set `ATTRACTOR_COMPARE_MODELS` to a comma-separated list to
+choose them; it defaults to Haiku and Opus.
+
+This is the useful side effect of having an engine seam: because the model is a
+parameter and the prompt is built in one place, "do different models read a
+conversation differently?" becomes a measurable question rather than a vague
+one. The readout is basin deltas, not prose.
 
 `ingest` makes two `claude -p` calls: one to summarize the transcript, one to
 generate the update. Expect a few seconds each — the CLI starts a process per

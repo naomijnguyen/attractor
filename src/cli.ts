@@ -6,16 +6,20 @@
  * by `claude -p` using the login Claude Code already has. No API key, no
  * Cloudflare account.
  *
- *   attractor seed <file.json>   initialize basins
- *   attractor ingest <file>      feed a transcript (or - for stdin)
- *   attractor                    show current state
- *   attractor history            show weight evolution
- *   attractor context            print the system-prompt block
+ *   attractor seed <file.json>     initialize basins
+ *   attractor ingest <file>        feed a transcript (or - for stdin)
+ *   attractor ingest --session     feed your latest Claude Code session
+ *   attractor sessions [filter]    list Claude Code sessions
+ *   attractor compare <file>       same conversation, several models, no writes
+ *   attractor                      show current state
+ *   attractor history              show weight evolution
+ *   attractor context              print the system-prompt block
  */
 import { readFile } from "node:fs/promises";
 import { applyUpdate, buildAttractorContext, createInitialState } from "./model";
-import { ClaudeCliEngine, SUMMARY_MODEL, type Engine } from "./engine";
-import { renderHistory, renderState } from "./render";
+import { ClaudeCliEngine, SUMMARY_MODEL, UPDATE_MODEL, type Engine } from "./engine";
+import { renderComparison, renderHistory, renderSessions, renderState } from "./render";
+import { listSessions, parseSession, toTranscript } from "./sessions";
 import { FileStore } from "./store";
 import type { BasinSeed } from "./types";
 
@@ -39,9 +43,9 @@ async function requireState(store: FileStore) {
   return state;
 }
 
-async function summarize(engine: Engine, transcript: string) {
+async function summarize(engine: Engine, transcript: string, model = SUMMARY_MODEL) {
   const capped = transcript.length > 40000 ? transcript.slice(-40000) : transcript;
-  const raw = await engine.complete(SUMMARY_PROMPT + capped, SUMMARY_MODEL);
+  const raw = await engine.complete(SUMMARY_PROMPT + capped, model);
   const clean = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
   try {
     const parsed = JSON.parse(clean) as { summary: string; vibes?: string[] };
@@ -51,8 +55,34 @@ async function summarize(engine: Engine, transcript: string) {
   }
 }
 
+/**
+ * Resolve a transcript from a file, stdin, or a Claude Code session.
+ * `--session` alone takes the most recent; `--session <filter>` takes the most
+ * recent whose project directory matches.
+ */
+async function resolveTranscript(arg: string | undefined, extra: string | undefined): Promise<string> {
+  if (!arg) fail("Need a transcript: a file path, - for stdin, or --session");
+
+  if (arg === "--session") {
+    const sessions = await listSessions(extra ?? "");
+    if (sessions.length === 0) {
+      fail(extra ? `No Claude Code sessions matching "${extra}".` : "No Claude Code sessions found.");
+    }
+    const pick = sessions[0];
+    const { readFile } = await import("node:fs/promises");
+    process.stderr.write(`Using ${pick.project}/${pick.id} (${pick.messages} messages)\n`);
+    return toTranscript(parseSession(await readFile(pick.path, "utf8")));
+  }
+
+  if (arg === "-") return new Response(process.stdin as unknown as ReadableStream).text();
+
+  const raw = await readFile(arg, "utf8");
+  // A .jsonl path is a session file, not prose.
+  return arg.endsWith(".jsonl") ? toTranscript(parseSession(raw)) : raw;
+}
+
 async function main() {
-  const [command = "show", arg] = process.argv.slice(2);
+  const [command = "show", arg, extra] = process.argv.slice(2);
   const store = new FileStore(process.env.ATTRACTOR_STATE || FileStore.defaultPath());
   const subject = process.env.ATTRACTOR_SUBJECT || "the user";
 
@@ -70,15 +100,12 @@ async function main() {
     }
 
     case "ingest": {
-      if (!arg) fail("Usage: attractor ingest <transcript.txt>   (or - for stdin)");
+      if (!arg) fail("Usage: attractor ingest <transcript.txt | --session [filter] | ->");
       if (!(await ClaudeCliEngine.available())) {
         fail("`claude` not found on PATH. Local mode drives the Claude Code CLI —\ninstall it, or use the hosted Worker with an API key.");
       }
       const state = await requireState(store);
-      const transcript =
-        arg === "-"
-          ? await new Response(process.stdin as unknown as ReadableStream).text()
-          : await readFile(arg, "utf8");
+      const transcript = await resolveTranscript(arg, extra);
       if (!transcript.trim()) fail("Transcript is empty.");
 
       const engine = new ClaudeCliEngine(subject);
@@ -98,6 +125,44 @@ async function main() {
       break;
     }
 
+    case "sessions": {
+      const sessions = await listSessions(arg ?? "");
+      if (sessions.length === 0) fail(arg ? `No sessions matching "${arg}".` : "No Claude Code sessions found.");
+      console.log(renderSessions(sessions));
+      break;
+    }
+
+    case "compare": {
+      if (!(await ClaudeCliEngine.available())) {
+        fail("`claude` not found on PATH. compare drives the Claude Code CLI.");
+      }
+      const state = await requireState(store);
+      const transcript = await resolveTranscript(arg, extra);
+      if (!transcript.trim()) fail("Transcript is empty.");
+
+      const models = (process.env.ATTRACTOR_COMPARE_MODELS || `${SUMMARY_MODEL},${UPDATE_MODEL}`)
+        .split(",")
+        .map((m) => m.trim())
+        .filter(Boolean);
+
+      const results = [];
+      for (const model of models) {
+        process.stderr.write(`${model}... `);
+        const engine = new ClaudeCliEngine(subject, "claude", model);
+        try {
+          const { summary, vibes } = await summarize(engine, transcript, model);
+          const update = await engine.generateUpdate(state, summary, vibes);
+          results.push({ model, summary, vibes, update, next: applyUpdate(state, update) });
+        } catch (err) {
+          results.push({ model, error: err instanceof Error ? err.message : String(err) });
+        }
+      }
+      process.stderr.write("done.\n");
+      // Read-only by design: compare shows what each model *would* do.
+      console.log(renderComparison(state, results));
+      break;
+    }
+
     case "history":
       console.log(renderHistory(await store.history()));
       break;
@@ -111,7 +176,7 @@ async function main() {
       break;
 
     default:
-      fail(`Unknown command "${command}". Try: seed, ingest, show, history, context`);
+      fail(`Unknown command "${command}". Try: seed, ingest, sessions, compare, show, history, context`);
   }
 }
 

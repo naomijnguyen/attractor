@@ -83,6 +83,8 @@ export class ClaudeCliEngine implements Engine {
   constructor(
     private subject = "the user",
     private bin = "claude",
+    /** Overrides per-call model selection. Used by `attractor compare`. */
+    private forceModel?: string,
   ) {}
 
   /** True if the CLI is on PATH. */
@@ -101,7 +103,18 @@ export class ClaudeCliEngine implements Engine {
       // Without --model, `claude -p` inherits whatever model the user's Claude
       // Code session is set to -- so summarizing would run on Opus and the two
       // engines would behave differently for the same work.
-      const proc = spawn(this.bin, ["-p", "--model", model], { stdio: ["pipe", "pipe", "pipe"] });
+      // `claude -p` is an agent, not a completion endpoint: by default it has
+      // tools and the current working directory in scope, and a capable model
+      // will happily go read your files instead of answering. --tools ""
+      // disables the built-in set and --strict-mcp-config skips MCP servers,
+      // which is what makes this behave like the HTTP API.
+      const args = [
+        "-p",
+        "--model", this.forceModel ?? model,
+        "--tools", "",
+        "--strict-mcp-config",
+      ];
+      const proc = spawn(this.bin, args, { stdio: ["pipe", "pipe", "pipe"] });
       let out = "";
       let err = "";
       proc.stdout.on("data", (d) => (out += d));
@@ -124,7 +137,7 @@ export class ClaudeCliEngine implements Engine {
     const prompt =
       buildUpdatePrompt(state, summary, vibes, this.subject) +
       "\n\nGenerate the attractor update for this conversation.";
-    return parseUpdate(await this.complete(prompt, UPDATE_MODEL));
+    return parseUpdate(await this.complete(prompt, this.forceModel ?? UPDATE_MODEL));
   }
 }
 
