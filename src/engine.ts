@@ -72,6 +72,15 @@ export class ApiEngine implements Engine {
 // === Local `claude -p` ===
 
 /**
+ * Replaces Claude Code's coding-assistant system prompt. Without this the
+ * model is told it is a software engineering agent, which tilts summaries
+ * toward technical framing and differs from what the hosted engine sends.
+ */
+const SYSTEM_PROMPT =
+  "You are a text analysis tool. Follow the user's instructions exactly and " +
+  "return only what is asked, with no preamble and no commentary.";
+
+/**
  * Drives the Claude Code CLI in print mode. No API key: `claude -p` uses the
  * login Claude Code already has, which is the whole point -- a Pro/Team/Max
  * subscriber can run the attractor without pay-as-you-go billing.
@@ -103,16 +112,21 @@ export class ClaudeCliEngine implements Engine {
       // Without --model, `claude -p` inherits whatever model the user's Claude
       // Code session is set to -- so summarizing would run on Opus and the two
       // engines would behave differently for the same work.
-      // `claude -p` is an agent, not a completion endpoint: by default it has
-      // tools and the current working directory in scope, and a capable model
-      // will happily go read your files instead of answering. --tools ""
-      // disables the built-in set and --strict-mcp-config skips MCP servers,
-      // which is what makes this behave like the HTTP API.
+      // `claude -p` is an agent, not a completion endpoint. Left alone it
+      // carries Claude Code's own system prompt, the built-in tools, the
+      // working directory, any MCP servers, and the user's CLAUDE.md -- so a
+      // capable model may go read your files instead of answering, and two
+      // people running this would get summaries shaped by their own notes.
+      //
+      // Each flag removes one of those, leaving something equivalent to the
+      // HTTP API call the hosted engine makes:
       const args = [
         "-p",
         "--model", this.forceModel ?? model,
-        "--tools", "",
-        "--strict-mcp-config",
+        "--tools", "",                 // no tools: the only output is text
+        "--strict-mcp-config",         // no MCP servers
+        "--setting-sources", "",       // no CLAUDE.md, user or project
+        "--system-prompt", SYSTEM_PROMPT,
       ];
       const proc = spawn(this.bin, args, { stdio: ["pipe", "pipe", "pipe"] });
       let out = "";
