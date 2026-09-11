@@ -22,6 +22,87 @@ Three properties fall out of that:
 
 Two metrics summarize the state: **entropy** (normalized Shannon entropy over basin weights — 0 means one basin dominates, 1 means attention is evenly spread) and **trajectory** (`stable` / `converging` / `diverging` / `restructuring`, from recent weight deltas).
 
+## The math
+
+Every rule, in one place. All of it is in `src/model.ts`.
+
+### Weights
+
+A basin's weight is its activity. Touched basins move by a model-proposed
+delta; untouched ones decay on their own.
+
+```
+touched:    w ← clamp(w + Δ,  0.05,  1.0)        Δ ∈ [−0.3, +0.3]
+untouched:  w ← w + (0.3 − w) × 0.05
+```
+
+Seeded basins start at **0.5**; basins that emerge later start at **0.4**, so
+they have to earn their place. The floor is **0.05**, not 0 — a basin goes
+dormant, never away, and a dormant basin can reactivate.
+
+The decay closes 5% of the gap to 0.3 per update, which is a half-life of
+**≈13.5 updates**. That is the "drifts, doesn't swing" property, and it is the
+one number to change if the attractor feels too sticky or too twitchy.
+
+Deltas are clamped to ±0.3 regardless of what the model proposes; the prompt
+asks for ±0.1. Measured across 40 logged updates, Haiku proposed a mean of
+**+0.126** and Opus **+0.083** — so model choice changes how fast the system
+converges, not just what it says.
+
+### Entropy
+
+Normalized Shannon entropy over the weights, treated as a distribution:
+
+```
+pᵢ = wᵢ / Σw
+H  = −Σ pᵢ log₂ pᵢ
+H_norm = H / log₂(n)          n = basin count
+```
+
+0 means one basin holds everything; 1 means weight is spread evenly. Edge
+cases: `Σw = 0` returns 1, and a single basin returns 0.
+
+**Read this carefully.** Because weights are normalised by their sum, entropy
+measures how evenly attention is *spread*, not how *focused* someone is. If
+every basin rises together the proportions barely move. Observed: entropy went
+1.000 → 0.986 across seven updates while the dominant basin went 50% → 100%.
+
+### Trajectory
+
+From the most recent step of each basin, not a longer trend:
+
+```
+cᵢ = |trajectoryᵢ[-1] − trajectoryᵢ[-2]|
+c̄  = mean(cᵢ)
+
+converging     top basin grew  and  c̄ < 0.10
+restructuring  c̄ > 0.15
+diverging      c̄ > 0.05
+stable         otherwise
+```
+
+### Keywords
+
+Capped at **10** per basin, deduplicated case-insensitively. On filling the
+slots for the **2nd** time, the basin is consolidated: its keywords are
+rewritten as **≤5** more general ones, `consolidationCount` increments, and the
+counter resets.
+
+This exists because the per-conversation update never prunes. Across 40 logged
+updates it proposed **115 keyword additions and 0 removals** — abstraction does
+not emerge from asking a local question, so it gets its own call.
+
+### Other bounds
+
+| | |
+|---|---|
+| Trajectory history | 20 points per basin |
+| Snapshot history | 10 states |
+| Active threshold | weight > 0.4 appears in the injected context |
+| Emerging patterns | 5 carried forward |
+
+---
+
 Full mechanics — state shape, update cycle, every tuning constant — are in [`docs/model.md`](docs/model.md).
 
 ---
