@@ -1,5 +1,5 @@
 import type { SessionInfo } from "./sessions";
-import type { AttractorState, AttractorUpdate, HistorySnapshot } from "./types";
+import type { AttractorState, AttractorUpdate, HistorySnapshot, RunRecord } from "./types";
 
 /**
  * Terminal rendering. Matches the output of the bash `cli/attractor` viewer so
@@ -10,6 +10,11 @@ const BAR_WIDTH = 30;
 const HISTORY_BAR = 10;
 /** 4-char percentage + "% " + bar + 2-char gutter. */
 const HISTORY_COL = HISTORY_BAR + 8;
+
+/** Trim a model id down to something that fits a column. */
+export function shortModel(model: string): string {
+  return model.replace(/^(cli|api):/, "").replace(/^claude-/, "").replace(/-\d{8}$/, "");
+}
 
 function bar(weight: number, width = BAR_WIDTH): string {
   const filled = Math.max(0, Math.min(width, Math.round(weight * width)));
@@ -75,7 +80,11 @@ export function renderHistory(history: HistorySnapshot[]): string {
     })
     .join("");
 
-  const out = ["Timestamp".padEnd(18) + head, "-".repeat(18 + HISTORY_COL * ids.length)];
+  const anyProvenance = history.some((h) => h.model);
+  const out = [
+    "Timestamp".padEnd(18) + head + (anyProvenance ? "  by" : ""),
+    "-".repeat(18 + HISTORY_COL * ids.length + (anyProvenance ? 20 : 0)),
+  ];
 
   for (const snap of history) {
     const ts = snap.timestamp.slice(0, 16).replace("T", " ");
@@ -86,7 +95,8 @@ export function renderHistory(history: HistorySnapshot[]): string {
         return `${(weight * 100).toFixed(0).padStart(4)}% ${bar(weight, HISTORY_BAR)}  `;
       })
       .join("");
-    out.push(ts.padEnd(18) + row);
+    const by = anyProvenance && snap.model ? `  ${shortModel(snap.model)}` : "";
+    out.push(ts.padEnd(18) + row + by);
   }
   return out.join("\n");
 }
@@ -242,5 +252,59 @@ function renderDeltaMatrix(before: AttractorState, results: ComparisonResult[]):
     "  · = basin not touched by that leg",
     "",
   );
+  return out.join("\n");
+}
+
+// === Run log ===
+
+
+/**
+ * Every update ever generated, grouped by conversation.
+ *
+ * Grouping by transcript hash is the point: one conversation, several models,
+ * possibly months apart. When a model is updated underneath you, replaying a
+ * known transcript and reading down its column shows whether its behaviour
+ * moved — which the attractor's own state cannot tell you, because it only
+ * remembers where it ended up.
+ */
+export function renderRuns(grouped: Map<string, RunRecord[]>): string {
+  const out: string[] = [""];
+
+  const conversations = [...grouped.entries()].sort(
+    (a, b) => Date.parse(b[1][b[1].length - 1].ts) - Date.parse(a[1][a[1].length - 1].ts),
+  );
+
+  for (const [hash, records] of conversations) {
+    const first = records[0];
+    out.push(`  ${"─".repeat(74)}`);
+    out.push(`  ${hash}  ${first.transcriptChars} chars, ${records.length} run(s)`);
+    out.push(`  "${first.preview}${first.preview.length >= 120 ? "..." : ""}"`);
+    out.push("");
+
+    const basinIds = [...new Set(records.flatMap((r) => r.update.basin_updates.map((u) => u.id)))];
+    const labelWidth = Math.max(8, ...basinIds.map((b) => b.length));
+    const COL = 16;
+
+    out.push(
+      "    " + "basin".padEnd(labelWidth) + records.map((r) => shortModel(r.model).slice(0, COL - 1).padStart(COL)).join(""),
+    );
+    out.push("    " + "-".repeat(labelWidth + COL * records.length));
+
+    for (const id of basinIds) {
+      const cells = records.map((r) => {
+        const bu = r.update.basin_updates.find((u) => u.id === id);
+        if (!bu) return "·".padStart(COL);
+        return `${bu.weight_delta >= 0 ? "+" : ""}${bu.weight_delta.toFixed(2)}`.padStart(COL);
+      });
+      out.push("    " + id.padEnd(labelWidth) + cells.join(""));
+    }
+
+    out.push("    " + "-".repeat(labelWidth + COL * records.length));
+    out.push("    " + "emerging".padEnd(labelWidth) + records.map((r) => String(r.update.emerging_patterns.length).padStart(COL)).join(""));
+    out.push("    " + "via".padEnd(labelWidth) + records.map((r) => r.engine.padStart(COL)).join(""));
+    out.push("    " + "applied".padEnd(labelWidth) + records.map((r) => (r.applied ? "yes" : "dry").padStart(COL)).join(""));
+    out.push("    " + "when".padEnd(labelWidth) + records.map((r) => r.ts.slice(0, 10).padStart(COL)).join(""));
+    out.push("");
+  }
   return out.join("\n");
 }

@@ -1,4 +1,4 @@
-import type { AttractorState, HistorySnapshot } from "./types";
+import type { AttractorState, HistorySnapshot, Provenance } from "./types";
 
 /**
  * Where attractor state lives.
@@ -9,7 +9,8 @@ import type { AttractorState, HistorySnapshot } from "./types";
  */
 export interface Store {
   load(): Promise<AttractorState | null>;
-  save(state: AttractorState): Promise<void>;
+  /** `by` records which engine and model produced this state, when known. */
+  save(state: AttractorState, by?: Provenance): Promise<void>;
   history(): Promise<HistorySnapshot[]>;
 }
 
@@ -19,10 +20,11 @@ const KV_HISTORY = "attractor:history";
 /** Snapshots kept. This is a trend line, not an archive. */
 const MAX_HISTORY = 10;
 
-function snapshot(state: AttractorState): HistorySnapshot {
+function snapshot(state: AttractorState, by?: Provenance): HistorySnapshot {
   return {
     timestamp: state.lastUpdated,
     basins: state.basins.map((b) => ({ id: b.id, weight: b.weight })),
+    ...(by ? { model: by.model, engine: by.engine } : {}),
   };
 }
 
@@ -51,10 +53,10 @@ export class KvStore implements Store {
     }
   }
 
-  async save(state: AttractorState): Promise<void> {
+  async save(state: AttractorState, by?: Provenance): Promise<void> {
     await this.kv.put(KV_STATE, JSON.stringify(state));
     const history = await this.history();
-    history.push(snapshot(state));
+    history.push(snapshot(state, by));
     await this.kv.put(KV_HISTORY, JSON.stringify(history.slice(-MAX_HISTORY)));
   }
 }
@@ -99,11 +101,11 @@ export class FileStore implements Store {
     return (await this.read()).history;
   }
 
-  async save(state: AttractorState): Promise<void> {
+  async save(state: AttractorState, by?: Provenance): Promise<void> {
     const { mkdir, writeFile } = await import("node:fs/promises");
     const { dirname } = await import("node:path");
     const { history } = await this.read();
-    history.push(snapshot(state));
+    history.push(snapshot(state, by));
     await mkdir(dirname(this.path), { recursive: true });
     await writeFile(
       this.path,

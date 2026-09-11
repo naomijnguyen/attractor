@@ -95,4 +95,40 @@ export interface AttractorUpdate {
 export interface HistorySnapshot {
   timestamp: string;
   basins: Array<{ id: string; weight: number }>;
+  /** Which model produced the update that led here, when known. */
+  model?: string;
+  /** "cli" or "api". */
+  engine?: string;
+}
+
+/** What produced an update. Recorded so runs can be attributed later. */
+export interface Provenance {
+  engine: string;
+  model: string;
+}
+
+/**
+ * One generated update, appended to the run log.
+ *
+ * The transcript itself is never stored -- only a hash and a short preview.
+ * The hash is what lets you line up runs of the same conversation across
+ * models and across time, which is the point: when a model changes underneath
+ * you, replaying a known transcript shows whether its behaviour moved.
+ */
+export interface RunRecord {
+  ts: string;
+  engine: string;
+  model: string;
+  /** SHA-256 of the transcript, truncated. Identifies the conversation. */
+  transcript: string;
+  transcriptChars: number;
+  preview: string;
+  summary: string;
+  vibes: string[];
+  update: AttractorUpdate;
+  entropyBefore: number;
+  entropyAfter: number;
+  trajectoryAfter: Trajectory;
+  /** false for `compare` legs, which are dry runs. */
+  applied: boolean;
 }

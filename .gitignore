@@ -20,3 +20,7 @@ venv/
 Thumbs.db
 .wrangler/
 dist/
+
+# Local attractor data — state, run log. Contains conversation summaries.
+.attractor/
+*.jsonl

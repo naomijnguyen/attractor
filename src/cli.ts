@@ -11,6 +11,7 @@
  *   attractor ingest --session     feed your latest Claude Code session
  *   attractor sessions [filter]    list Claude Code sessions
  *   attractor compare <file>       same conversation, several models, no writes
+ *   attractor runs [filter]        every update ever generated, by conversation
  *   attractor                      show current state
  *   attractor history              show weight evolution
  *   attractor context              print the system-prompt block
@@ -18,10 +19,11 @@
 import { readFile } from "node:fs/promises";
 import { applyUpdate, buildAttractorContext, createInitialState } from "./model";
 import { ApiEngine, ClaudeCliEngine, DEFAULT_MODELS, type Engine, type ModelConfig } from "./engine";
-import { renderComparison, renderHistory, renderSessions, renderState } from "./render";
+import { renderComparison, renderHistory, renderRuns, renderSessions, renderState } from "./render";
 import { listSessions, parseSession, toTranscript } from "./sessions";
 import { FileStore } from "./store";
-import type { BasinSeed } from "./types";
+import { RunLog } from "./runs";
+import type { BasinSeed, RunRecord } from "./types";
 
 const SUMMARY_PROMPT = `Analyze this conversation and return a JSON object with exactly two fields:
 1. "summary": A concise 1-2 sentence summary of what was discussed and accomplished.
@@ -84,6 +86,7 @@ async function resolveTranscript(arg: string | undefined, extra: string | undefi
 async function main() {
   const [command = "show", arg, extra] = process.argv.slice(2);
   const store = new FileStore(process.env.ATTRACTOR_STATE || FileStore.defaultPath());
+  const runs = new RunLog(process.env.ATTRACTOR_RUNS || RunLog.defaultPath());
   const subject = process.env.ATTRACTOR_SUBJECT || "the user";
   const models: ModelConfig = {
     summary: process.env.ATTRACTOR_SUMMARY_MODEL || DEFAULT_MODELS.summary,
@@ -118,7 +121,22 @@ async function main() {
       process.stderr.write("generating update... ");
       const update = await engine.generateUpdate(state, summary, vibes);
       const next = applyUpdate(state, update);
-      await store.save(next);
+      await store.save(next, { engine: "cli", model: models.update });
+      await runs.append({
+        ts: new Date().toISOString(),
+        engine: "cli",
+        model: models.update,
+        transcript: await RunLog.hashTranscript(transcript),
+        transcriptChars: transcript.length,
+        preview: RunLog.preview(transcript),
+        summary,
+        vibes,
+        update,
+        entropyBefore: state.entropy,
+        entropyAfter: next.entropy,
+        trajectoryAfter: next.meta.recentTrajectory,
+        applied: true,
+      });
       process.stderr.write("done.\n\n");
 
       console.log(`  ${summary}`);
@@ -163,6 +181,7 @@ async function main() {
             : { kind: "cli", model: head };
         });
 
+      const transcriptHash = await RunLog.hashTranscript(transcript);
       const results = [];
       for (const { kind, model } of legs) {
         const label = `${kind}:${model}`;
@@ -179,7 +198,23 @@ async function main() {
 
           const { summary, vibes } = await summarize(engine, transcript, model);
           const update = await engine.generateUpdate(state, summary, vibes);
-          results.push({ model: label, summary, vibes, update, next: applyUpdate(state, update) });
+          const next = applyUpdate(state, update);
+          results.push({ model: label, summary, vibes, update, next });
+          await runs.append({
+            ts: new Date().toISOString(),
+            engine: kind,
+            model,
+            transcript: transcriptHash,
+            transcriptChars: transcript.length,
+            preview: RunLog.preview(transcript),
+            summary,
+            vibes,
+            update,
+            entropyBefore: state.entropy,
+            entropyAfter: next.entropy,
+            trajectoryAfter: next.meta.recentTrajectory,
+            applied: false,
+          });
         } catch (err) {
           results.push({ model: label, error: err instanceof Error ? err.message : String(err) });
         }
@@ -187,6 +222,15 @@ async function main() {
       process.stderr.write("done.\n");
       // Read-only by design: compare shows what each model *would* do.
       console.log(renderComparison(state, results));
+      break;
+    }
+
+    case "runs": {
+      const grouped = await runs.byTranscript(arg ?? "");
+      if (grouped.size === 0) {
+        fail(arg ? `No runs matching "${arg}".` : "No runs logged yet. Run ingest or compare first.");
+      }
+      console.log(renderRuns(grouped));
       break;
     }
 
@@ -203,7 +247,7 @@ async function main() {
       break;
 
     default:
-      fail(`Unknown command "${command}". Try: seed, ingest, sessions, compare, show, history, context`);
+      fail(`Unknown command "${command}". Try: seed, ingest, sessions, compare, runs, show, history, context`);
   }
 }
 

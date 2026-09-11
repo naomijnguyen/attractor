@@ -180,6 +180,72 @@ whether you're modelling a settled set of interests or looking for new ones.
 One conversation and two runs each is an observation, not a result — but the
 method is one command, so making it a result is cheap.
 
+### The run log
+
+Every update the attractor generates is appended to `~/.attractor/runs.jsonl`
+— from `ingest` and from each `compare` leg, marked `applied` or `dry`.
+
+```bash
+./dist/attractor.mjs runs              # grouped by conversation
+./dist/attractor.mjs runs <hash>       # one conversation
+./dist/attractor.mjs runs opus         # filter by model
+```
+
+```
+  3553445eb1f8  466 chars, 2 run(s)
+  "User: I want the attractor to run without an API key so anyone with..."
+
+    basin                      haiku-4-5          opus-5
+    ----------------------------------------------------
+    systems-design                 +0.15           +0.09
+    context-architecture           +0.08           +0.06
+    ----------------------------------------------------
+    emerging                           1               4
+    via                              cli             cli
+    applied                          dry             dry
+    when                      2026-09-11      2026-09-11
+```
+
+Runs are grouped by a hash of the transcript, and that join key is the whole
+design. **Models change underneath you.** When one is updated, replaying a
+conversation you already have runs for and reading down its row shows whether
+its behaviour moved — something the attractor's own state can never tell you,
+because state only records where it ended up, not what took it there.
+
+`attractor history` now also records which model produced each step:
+
+```
+2026-09-11 02:35    67% #######...    87% #########.    opus-5
+2026-09-11 02:35    65% #######...   100% ##########    haiku-4-5
+```
+
+So if the attractor's behaviour shifts, you can see whether the conversations
+changed or the model did.
+
+It's plain JSON Lines with no schema magic, so you don't need this tool to
+analyse it:
+
+```bash
+python3 -c "
+import json, collections
+agg = collections.defaultdict(list)
+for line in open('$HOME/.attractor/runs.jsonl'):
+    r = json.loads(line)
+    for u in r['update']['basin_updates']: agg[r['model']].append(u['weight_delta'])
+for m, v in agg.items(): print(f'{m:<30} mean delta {sum(v)/len(v):+.3f} (n={len(v)})')
+"
+```
+
+```
+claude-haiku-4-5-20251001      mean delta +0.126 (n=5)
+claude-opus-5                  mean delta +0.083 (n=4)
+```
+
+**A privacy note.** The log stores conversation *summaries* and a 120-character
+preview — not full transcripts, but still content. It lives in `~/.attractor/`
+outside any repo, and `.attractor/` and `*.jsonl` are gitignored here. Don't
+commit it, and think before sharing it.
+
 ### Choosing models
 
 Two jobs, two models. Generating an update needs judgement about what a
