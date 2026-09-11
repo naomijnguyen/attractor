@@ -46,7 +46,12 @@ async function generateVia(
   vibes: string[],
 ): Promise<AttractorUpdate> {
   const system = buildUpdatePrompt(state, summary, vibes, subject);
-  return parseUpdate(await engine.call(system, UPDATE_INSTRUCTION, model, 800));
+  // Generous. Reasoning models spend this budget on a thinking block before
+  // emitting any JSON, so 800 truncated Opus 5 mid-string while the CLI path
+  // succeeded — `claude -p` has no max-tokens flag and ignores the argument.
+  // That asymmetry is exactly what the cli-vs-api comparison exists to catch,
+  // and it caught it.
+  return parseUpdate(await engine.call(system, UPDATE_INSTRUCTION, model, 4000));
 }
 
 /**
