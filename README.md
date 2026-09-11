@@ -55,20 +55,71 @@ knowing before you read anything into the number.
 ```
 src/
   model.ts      The attractor itself: entropy, trajectory, decay, update application
+  store.ts      Where state lives -- FileStore (local) or KvStore (hosted)
+  engine.ts     What generates updates -- ClaudeCliEngine or ApiEngine
+  render.ts     Terminal output
+  cli.ts        Local CLI entry point
   routes.ts     REST API over the model
   index.ts      Worker entry point
   types.ts      State, basins, updates
-  utils.ts      HTTP helpers
-cli/attractor   Terminal visualization (bash + python3)
+cli/attractor   Zero-dependency bash viewer for a hosted deployment
 web/            React canvas view with force-directed layout
 docs/model.md   How the model works
 ```
 
-`src/model.ts` is the part worth reading. Everything else is plumbing around it.
+`src/model.ts` is the part worth reading. `store.ts` and `engine.ts` are the two
+seams that let the same model run locally or hosted; everything else is
+plumbing.
 
 ---
 
-## Setup
+## Two ways to run it
+
+| Mode | Engine | State | You need |
+|---|---|---|---|
+| **Local** | `claude -p` | `~/.attractor/state.json` | Claude Code |
+| **Hosted** | Anthropic API | Cloudflare KV | A Worker + an API key |
+
+Local is the one to try first. It needs no API key and no Cloudflare account,
+because `claude -p` runs against whatever login Claude Code already has — a
+Pro, Team or Max subscription works. Hosted is what you deploy when you want
+the attractor reachable from anything, not just the machine it lives on.
+
+Both share `src/model.ts`. The safeguards in `applyUpdate` — the delta clamps,
+the weight bounds, the decay — apply identically either way, because the model
+is pure functions over plain state and doesn't know where that state lives.
+
+---
+
+## Local mode
+
+```bash
+npm install && npm run build
+
+cat > basins.json <<'EOF'
+[
+  { "label": "Research methodology", "description": "Study design, controls, what makes a result trustworthy", "keywords": ["assay", "controls"] },
+  { "label": "Systems design", "description": "Where state lives and how parts connect", "keywords": ["api", "storage"] }
+]
+EOF
+
+./dist/attractor.mjs seed basins.json
+./dist/attractor.mjs ingest conversation.txt   # or - for stdin
+./dist/attractor.mjs                           # show current state
+./dist/attractor.mjs history                   # weight evolution
+./dist/attractor.mjs context                   # the system-prompt block
+```
+
+`ingest` makes two `claude -p` calls: one to summarize the transcript, one to
+generate the update. Expect a few seconds each — the CLI starts a process per
+call, which is fine for a handful of conversations and wrong for hundreds.
+
+Set `ATTRACTOR_STATE` to put the file somewhere other than `~/.attractor/`, and
+`ATTRACTOR_SUBJECT` to say whose engagement it models.
+
+---
+
+## Hosted mode
 
 Requires a Cloudflare account and an Anthropic API key.
 

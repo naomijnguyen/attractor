@@ -3,16 +3,11 @@ import type {
   AttractorUpdate,
   Basin,
   BasinSeed,
-  Env,
-  HistorySnapshot,
   Trajectory,
 } from "./types";
 
 // === Tuning constants ===
 // These are the rules of the system. Changing them changes how it remembers.
-
-const KV_STATE = "attractor:state";
-const KV_HISTORY = "attractor:history";
 
 /** Basins start neutral; nothing is favoured at seed time. */
 const SEED_WEIGHT = 0.5;
@@ -29,11 +24,9 @@ const DECAY_RATE = 0.05;
 const MAX_DELTA = 0.3;
 const MAX_KEYWORDS = 10;
 const MAX_TRAJECTORY = 20;
-const MAX_HISTORY = 10;
 /** Above this weight a basin is "active" and appears in the system prompt. */
 const ACTIVE_THRESHOLD = 0.4;
 
-const MODEL = "claude-opus-4-6";
 
 /** Slugify a label into a stable basin id. */
 export function toBasinId(label: string): string {
@@ -41,43 +34,6 @@ export function toBasinId(label: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-// === Persistence ===
-
-export async function getAttractorState(kv: KVNamespace): Promise<AttractorState | null> {
-  const raw = await kv.get(KV_STATE);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as AttractorState;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Persist state and append a weight snapshot to the rolling history.
- * History is capped at MAX_HISTORY -- this is a trend line, not an archive.
- */
-export async function saveAttractorState(kv: KVNamespace, state: AttractorState): Promise<void> {
-  await kv.put(KV_STATE, JSON.stringify(state));
-
-  let history: HistorySnapshot[] = [];
-  const historyRaw = await kv.get(KV_HISTORY);
-  if (historyRaw) {
-    try {
-      history = JSON.parse(historyRaw) as HistorySnapshot[];
-    } catch {
-      history = [];
-    }
-  }
-
-  history.push({
-    timestamp: state.lastUpdated,
-    basins: state.basins.map((b) => ({ id: b.id, weight: b.weight })),
-  });
-
-  await kv.put(KV_HISTORY, JSON.stringify(history.slice(-MAX_HISTORY)));
 }
 
 export function createInitialState(seeds: BasinSeed[]): AttractorState {
@@ -270,22 +226,22 @@ export function applyUpdate(state: AttractorState, update: AttractorUpdate): Att
   };
 }
 
-// === Model-driven update generation ===
+// === Update generation: prompt in, update out ===
 
 /**
- * Ask Claude how this conversation should move the attractor.
+ * Build the prompt that asks a model how this conversation should move the
+ * attractor. Engine-agnostic -- the same text goes to the HTTP API or to
+ * `claude -p`, so both paths stay in step.
  *
- * The prompt is deliberately conservative: the attractor should drift, not
- * swing. Whatever comes back is clamped by `applyUpdate` regardless.
+ * Deliberately conservative: the attractor should drift, not swing. Whatever
+ * comes back is clamped by `applyUpdate` regardless.
  */
-export async function generateAttractorUpdate(
-  env: Env,
+export function buildUpdatePrompt(
   state: AttractorState,
   conversationSummary: string,
   conversationVibes: string[],
-): Promise<AttractorUpdate> {
-  const subject = env.ATTRACTOR_SUBJECT || "the user";
-
+  subject = "the user",
+): string {
   const basinDescriptions = state.basins
     .map(
       (b) =>
@@ -294,7 +250,7 @@ export async function generateAttractorUpdate(
     )
     .join("\n");
 
-  const prompt = `You are maintaining an attractor — a persistent topological memory structure that tracks how ${subject}'s interests, projects, and modes of engagement evolve across conversations. Each "basin" represents a mode of thinking/engagement with a weight indicating how active/relevant it currently is. Basins are not just topics — they're energy states that conversations orbit.
+  return `You are maintaining an attractor — a persistent topological memory structure that tracks how ${subject}'s interests, projects, and modes of engagement evolve across conversations. Each "basin" represents a mode of thinking/engagement with a weight indicating how active/relevant it currently is. Basins are not just topics — they're energy states that conversations orbit.
 
 Current attractor state:
 - Phase: ${state.phase}
@@ -338,29 +294,13 @@ Rules:
 - Be conservative. The attractor should evolve slowly and organically.
 
 Return ONLY the JSON object, no markdown formatting.`;
+}
 
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 800,
-      temperature: 0.3,
-      system: prompt,
-      messages: [{ role: "user", content: "Generate the attractor update for this conversation." }],
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Claude API error: ${response.status}`);
-  }
-
-  const result = (await response.json()) as { content: Array<{ type: string; text: string }> };
-  const text = result.content[0]?.text ?? "";
+/**
+ * Parse and normalize a model's response into an AttractorUpdate.
+ * The model is not trusted to return well-formed shapes, or honest numbers.
+ */
+export function parseUpdate(text: string): AttractorUpdate {
   const clean = text
     .replace(/```json\n?/g, "")
     .replace(/```\n?/g, "")
@@ -368,7 +308,6 @@ Return ONLY the JSON object, no markdown formatting.`;
 
   const parsed = JSON.parse(clean) as AttractorUpdate;
 
-  // Defensive normalization -- the model is not trusted to return well-formed shapes.
   if (!Array.isArray(parsed.basin_updates)) parsed.basin_updates = [];
   if (!Array.isArray(parsed.new_connections)) parsed.new_connections = [];
   if (!Array.isArray(parsed.emerging_patterns)) parsed.emerging_patterns = [];
@@ -376,7 +315,6 @@ Return ONLY the JSON object, no markdown formatting.`;
   for (const bu of parsed.basin_updates) {
     bu.weight_delta = Math.max(-MAX_DELTA, Math.min(MAX_DELTA, bu.weight_delta));
   }
-
   return parsed;
 }
 

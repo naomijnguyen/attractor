@@ -1,13 +1,8 @@
 import type { BasinSeed, Env } from "./types";
 import { json, error, matchRoute } from "./utils";
-import {
-  applyUpdate,
-  createInitialState,
-  generateAttractorUpdate,
-  getAttractorState,
-  saveAttractorState,
-  toBasinId,
-} from "./model";
+import { applyUpdate, createInitialState, toBasinId } from "./model";
+import { getAttractorState, saveAttractorState } from "./store";
+import { generateAttractorUpdate } from "./engine";
 
 // === Attractor API Routes ===
 
