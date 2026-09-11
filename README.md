@@ -133,6 +133,53 @@ parameter and the prompt is built in one place, "do different models read a
 conversation differently?" becomes a measurable question rather than a vague
 one. The readout is basin deltas, not prose.
 
+### What comparing actually shows
+
+Legs are `engine:model` pairs, so you can vary the model, the transport, or
+both. A bare model name means the local CLI.
+
+```bash
+ATTRACTOR_COMPARE_MODELS="cli:claude-haiku-4-5-20251001,cli:claude-opus-5,api:claude-opus-5" \
+  ./dist/attractor.mjs compare --session
+```
+
+Running the same model through both `cli:` and `api:` is the control: identical
+prompt, different transport, so they should agree. If they don't, the two
+engines aren't sending equivalent requests.
+
+Running each model twice separates run-to-run noise from a real difference.
+One conversation, two runs per model:
+
+```
+  basin                cli:haiku-4-5 cli:haiku-4-5    cli:opus-5    cli:opus-5
+  ----------------------------------------------------------------------------
+  Context architecture         +0.05         +0.10         +0.05         +0.05
+  Systems design               +0.15         +0.15         +0.09         +0.08
+  ----------------------------------------------------------------------------
+  connections                      0             0             0             0
+  emerging                         0             0             3             4
+```
+
+Two differences survive that control, and both are structural rather than
+stylistic.
+
+**Haiku moves the attractor about twice as fast.** The prompt asks both models
+to be conservative and reserve large deltas for conversations deeply about a
+topic. Opus does that; Haiku treats the ceiling as the target. At +0.15 a basin
+saturates in roughly four conversations, at +0.085 in seven — the same code
+gives you a memory that settles at two different speeds.
+
+**Haiku surfaces no emerging patterns; Opus surfaces three or four.** That one
+has consequences, because `emerging_patterns` is how new basins are born. Under
+Haiku the attractor can only redistribute weight among the basins you seeded.
+Under Opus it stays open-ended.
+
+Neither is wrong. They're different instruments, and which you want depends on
+whether you're modelling a settled set of interests or looking for new ones.
+
+One conversation and two runs each is an observation, not a result — but the
+method is one command, so making it a result is cheap.
+
 ### Choosing models
 
 Two jobs, two models. Generating an update needs judgement about what a

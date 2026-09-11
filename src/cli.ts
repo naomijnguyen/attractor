@@ -17,7 +17,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { applyUpdate, buildAttractorContext, createInitialState } from "./model";
-import { ClaudeCliEngine, DEFAULT_MODELS, type Engine, type ModelConfig } from "./engine";
+import { ApiEngine, ClaudeCliEngine, DEFAULT_MODELS, type Engine, type ModelConfig } from "./engine";
 import { renderComparison, renderHistory, renderSessions, renderState } from "./render";
 import { listSessions, parseSession, toTranscript } from "./sessions";
 import { FileStore } from "./store";
@@ -144,23 +144,44 @@ async function main() {
       const transcript = await resolveTranscript(arg, extra);
       if (!transcript.trim()) fail("Transcript is empty.");
 
-      const compareModels = (
-        process.env.ATTRACTOR_COMPARE_MODELS || `${models.summary},${models.update}`
-      )
+      // Legs are "engine:model" pairs. A bare "model" means the local CLI, so
+      // the simple case stays simple. With a key present the default also runs
+      // each model through the HTTP API -- same prompt, different transport --
+      // which is the control for whether the two engines actually agree.
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      const defaultLegs = [`cli:${models.summary}`, `cli:${models.update}`].concat(
+        apiKey ? [`api:${models.summary}`, `api:${models.update}`] : [],
+      );
+      const legs = (process.env.ATTRACTOR_COMPARE_MODELS || defaultLegs.join(","))
         .split(",")
         .map((m) => m.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .map((spec) => {
+          const [head, ...rest] = spec.split(":");
+          return rest.length > 0
+            ? { kind: head.toLowerCase(), model: rest.join(":") }
+            : { kind: "cli", model: head };
+        });
 
       const results = [];
-      for (const model of compareModels) {
-        process.stderr.write(`${model}... `);
-        const engine = new ClaudeCliEngine(subject, "claude", model);
+      for (const { kind, model } of legs) {
+        const label = `${kind}:${model}`;
+        process.stderr.write(`${label}... `);
         try {
+          if (kind !== "cli" && kind !== "api") throw new Error(`Unknown engine "${kind}". Use cli: or api:.`);
+          if (kind === "api" && !apiKey) throw new Error("ANTHROPIC_API_KEY is not set, so the api leg cannot run.");
+
+          const one: ModelConfig = { summary: model, update: model };
+          const engine: Engine =
+            kind === "api"
+              ? new ApiEngine(apiKey as string, subject, one)
+              : new ClaudeCliEngine(subject, "claude", model, one);
+
           const { summary, vibes } = await summarize(engine, transcript, model);
           const update = await engine.generateUpdate(state, summary, vibes);
-          results.push({ model, summary, vibes, update, next: applyUpdate(state, update) });
+          results.push({ model: label, summary, vibes, update, next: applyUpdate(state, update) });
         } catch (err) {
-          results.push({ model, error: err instanceof Error ? err.message : String(err) });
+          results.push({ model: label, error: err instanceof Error ? err.message : String(err) });
         }
       }
       process.stderr.write("done.\n");

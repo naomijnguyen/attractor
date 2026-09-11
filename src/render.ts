@@ -182,5 +182,65 @@ export function renderComparison(before: AttractorState, results: ComparisonResu
       "",
     );
   }
+
+  const ran = results.filter((r) => r.update);
+  if (ran.length > 1) out.push(renderDeltaMatrix(before, ran));
+  return out.join("\n");
+}
+
+/**
+ * Every leg's proposed delta for every basin, side by side.
+ *
+ * This is the actual readout. Two legs running the same model through
+ * different engines should agree here; if they don't, the engines are not
+ * sending equivalent requests. Two different models will disagree, and *how*
+ * they disagree is the interesting part.
+ */
+function renderDeltaMatrix(before: AttractorState, results: ComparisonResult[]): string {
+  const COL = 14;
+  const labelWidth = Math.max(...before.basins.map((b) => b.label.length), 8);
+
+  const short = (model: string) =>
+    model
+      .replace(/^(cli|api):/, (m) => m)
+      .replace(/claude-/, "")
+      .replace(/-\d{8}$/, "")
+      .slice(0, COL - 1);
+
+  const out = [
+    `  ${"─".repeat(70)}`,
+    "  Proposed deltas, side by side",
+    "",
+    "  " + "basin".padEnd(labelWidth) + results.map((r) => short(r.model).padStart(COL)).join(""),
+    "  " + "-".repeat(labelWidth + COL * results.length),
+  ];
+
+  for (const basin of before.basins) {
+    const cells = results.map((r) => {
+      const bu = r.update?.basin_updates.find((u) => u.id === basin.id);
+      if (!bu) return "·".padStart(COL);
+      const sign = bu.weight_delta >= 0 ? "+" : "";
+      return `${sign}${bu.weight_delta.toFixed(2)}`.padStart(COL);
+    });
+    // Skip basins no leg touched -- they are just decay.
+    if (cells.every((c) => c.trim() === "·")) continue;
+    out.push("  " + basin.label.padEnd(labelWidth) + cells.join(""));
+  }
+
+  out.push(
+    "  " + "-".repeat(labelWidth + COL * results.length),
+    "  " +
+      "connections".padEnd(labelWidth) +
+      results.map((r) => String(r.update?.new_connections.length ?? 0).padStart(COL)).join(""),
+    "  " +
+      "emerging".padEnd(labelWidth) +
+      results.map((r) => String(r.update?.emerging_patterns.length ?? 0).padStart(COL)).join(""),
+    "  " +
+      "entropy".padEnd(labelWidth) +
+      results.map((r) => (r.next ? r.next.entropy.toFixed(3) : "-").padStart(COL)).join(""),
+    "",
+    "  · = basin not touched by that leg",
+    "",
+  );
   return out.join("\n");
 }
