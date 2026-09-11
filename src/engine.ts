@@ -1,5 +1,5 @@
-import { buildUpdatePrompt, parseUpdate } from "./model";
-import type { AttractorState, AttractorUpdate, Env } from "./types";
+import { buildConsolidatePrompt, buildUpdatePrompt, parseConsolidation, parseUpdate } from "./model";
+import type { AttractorState, AttractorUpdate, Basin, Env } from "./types";
 
 /**
  * What generates an attractor update.
@@ -213,6 +213,15 @@ export class ClaudeCliEngine implements Engine {
   generateUpdate(state: AttractorState, summary: string, vibes: string[]): Promise<AttractorUpdate> {
     return generateVia(this, this.forceModel ?? this.models.update, this.subject, state, summary, vibes);
   }
+}
+
+/**
+ * Abstract a basin's keywords. Uses the same `call` primitive as everything
+ * else, so both engines behave identically here too.
+ */
+export async function consolidateBasin(engine: Engine, basin: Basin, model: string): Promise<string[]> {
+  const text = await engine.call(ANALYSIS_SYSTEM, buildConsolidatePrompt(basin), model, 500);
+  return parseConsolidation(text, basin.keywords);
 }
 
 /** Read model overrides from Worker bindings, falling back to defaults. */

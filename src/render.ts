@@ -49,7 +49,10 @@ export function renderState(state: AttractorState): string {
     const pct = (b.weight * 100).toFixed(1).padStart(5);
     const arrow = trendArrow(b.trajectory).padEnd(3);
     const plural = b.conversationCount === 1 ? "convo" : "convos";
-    out.push(`  ${b.label.padEnd(w)} ${pct}% ${arrow}[${bar(b.weight)}]  (${b.conversationCount} ${plural})`);
+    // A basin abstracted several times has earned its general vocabulary;
+    // weight alone cannot show that.
+    const abstracted = (b.consolidationCount ?? 0) > 0 ? ` ~${b.consolidationCount}x` : "";
+    out.push(`  ${b.label.padEnd(w)} ${pct}% ${arrow}[${bar(b.weight)}]  (${b.conversationCount} ${plural})${abstracted}`);
     if (b.connections.length > 0) {
       out.push(`  ${" ".repeat(w)} -> ${b.connections.join(", ")}`);
     }

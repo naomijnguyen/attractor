@@ -155,10 +155,24 @@ export function applyUpdate(state: AttractorState, update: AttractorUpdate): Att
     basin.weight = Math.max(MIN_WEIGHT, Math.min(MAX_WEIGHT, basin.weight + bu.weight_delta));
 
     if (bu.new_keywords) {
+      // Case-insensitive: a model call should not be spent noticing that
+      // "Claude CLI session" and "claude CLI session" are the same thing.
+      // Deterministic dedup first, semantic merging later.
+      const seen = new Set(basin.keywords.map((k) => k.toLowerCase().trim()));
       for (const kw of bu.new_keywords) {
-        if (!basin.keywords.includes(kw)) basin.keywords.push(kw);
+        const norm = kw.toLowerCase().trim();
+        if (norm && !seen.has(norm)) {
+          seen.add(norm);
+          basin.keywords.push(kw.trim());
+        }
       }
-      basin.keywords = basin.keywords.slice(-MAX_KEYWORDS);
+      if (basin.keywords.length > MAX_KEYWORDS) {
+        // Record that the basin is out of room. The caller decides whether to
+        // consolidate; applyUpdate stays pure and synchronous, because it is
+        // the safeguard layer and a model call does not belong in it.
+        basin.capHits = (basin.capHits ?? 0) + 1;
+        basin.keywords = basin.keywords.slice(-MAX_KEYWORDS);
+      }
     }
     if (bu.remove_keywords) {
       const removing = bu.remove_keywords;
@@ -316,6 +330,77 @@ export function parseUpdate(text: string): AttractorUpdate {
     bu.weight_delta = Math.max(-MAX_DELTA, Math.min(MAX_DELTA, bu.weight_delta));
   }
   return parsed;
+}
+
+// === Keyword consolidation ===
+
+/** Consolidate after this many times filling the keyword slots, not the first. */
+export const CONSOLIDATE_AFTER_CAP_HITS = 2;
+
+/** Target size after abstraction, leaving room to accumulate again. */
+const CONSOLIDATED_SIZE = 5;
+
+/** Basins whose keywords are due to be abstracted. */
+export function basinsNeedingConsolidation(state: AttractorState): Basin[] {
+  return state.basins.filter((b) => (b.capHits ?? 0) >= CONSOLIDATE_AFTER_CAP_HITS);
+}
+
+/**
+ * Ask for a basin's keywords to be abstracted rather than evicted.
+ *
+ * Eviction by recency means a basin's keyword list describes its last few
+ * conversations instead of its identity — the concepts that founded it get
+ * pushed out by whatever arrived most recently. Abstraction keeps the shape
+ * and drops the specifics, which is what a mode of engagement *is* as opposed
+ * to a topic.
+ *
+ * Deliberately a separate call from the per-conversation update. That update
+ * answers a local question ("what did this conversation do?") and is purely
+ * additive in practice — across 40 logged updates it proposed 115 keyword
+ * additions and zero removals. Abstraction is a global question about the
+ * whole basin, and asking one call to do both gets neither done well.
+ */
+export function buildConsolidatePrompt(basin: Basin): string {
+  return `You are abstracting the keyword list of one basin in a topological memory structure.
+
+A basin is a mode of engagement — a way of thinking that conversations orbit — not a topic. Its keywords have accumulated to the point of crowding out the concepts that defined it.
+
+Basin: ${basin.label}
+Description: ${basin.description}
+Current keywords: ${basin.keywords.join(", ")}
+
+Produce a smaller, more general set of at most ${CONSOLIDATED_SIZE} keywords that preserves what this basin *is* while dropping incidental specifics. Merge near-synonyms. Prefer the shape of the work over the instances of it: several keywords naming particular bugs might become one naming the class of bug.
+
+Do not invent themes that are not present. If the keywords are already general and distinct, return them unchanged.
+
+Return ONLY a JSON array of strings. No explanation, no markdown.`;
+}
+
+/** Parse a consolidation reply, falling back to the existing keywords. */
+export function parseConsolidation(text: string, fallback: string[]): string[] {
+  try {
+    const clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+    const parsed = JSON.parse(clean);
+    if (!Array.isArray(parsed)) return fallback;
+    const out = parsed.filter((k): k is string => typeof k === "string" && k.trim().length > 0)
+      .map((k) => k.trim())
+      .slice(0, CONSOLIDATED_SIZE);
+    return out.length > 0 ? out : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Apply a consolidation result. Pure; resets the cap counter. */
+export function applyConsolidation(state: AttractorState, basinId: string, keywords: string[]): AttractorState {
+  return {
+    ...state,
+    basins: state.basins.map((b) =>
+      b.id === basinId
+        ? { ...b, keywords, capHits: 0, consolidationCount: (b.consolidationCount ?? 0) + 1 }
+        : b,
+    ),
+  };
 }
 
 // === System prompt integration ===

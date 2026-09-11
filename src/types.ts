@@ -49,6 +49,19 @@ export interface Basin {
   trajectory: number[];
   lastActive: string;
   conversationCount: number;
+  /**
+   * How many times this basin has filled its keyword slots. Consolidation is
+   * triggered on repeated hits rather than the first, so a basin has to keep
+   * earning new vocabulary before its old vocabulary is abstracted away.
+   */
+  capHits?: number;
+  /**
+   * How many times its keywords have been abstracted. A basin consolidated
+   * several times is qualitatively different from a fresh one — its keywords
+   * are general because they were earned, not because they started that way.
+   * Weight cannot tell you this; it only says "recently active".
+   */
+  consolidationCount?: number;
 }
 
 export type Trajectory = "stable" | "converging" | "diverging" | "restructuring";

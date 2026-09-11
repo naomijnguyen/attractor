@@ -17,8 +17,8 @@
  *   attractor context              print the system-prompt block
  */
 import { readFile } from "node:fs/promises";
-import { applyUpdate, buildAttractorContext, createInitialState } from "./model";
-import { ApiEngine, ClaudeCliEngine, DEFAULT_MODELS, type Engine, type ModelConfig } from "./engine";
+import { applyConsolidation, applyUpdate, basinsNeedingConsolidation, buildAttractorContext, createInitialState } from "./model";
+import { ApiEngine, ClaudeCliEngine, consolidateBasin, DEFAULT_MODELS, type Engine, type ModelConfig } from "./engine";
 import { renderComparison, renderHistory, renderRuns, renderSessions, renderState } from "./render";
 import { listSessions, parseSession, toTranscript } from "./sessions";
 import { FileStore } from "./store";
@@ -118,13 +118,28 @@ async function main() {
       if (!transcript.trim()) fail("Transcript is empty.");
 
       const engine = new ClaudeCliEngine(subject, "claude", undefined, models);
+      const consolidations: Array<{ basin: string; before: string[]; after: string[] }> = [];
       process.stderr.write("Summarizing... ");
       const { summary, vibes } = await summarize(engine, transcript, models.summary).catch((e: unknown) =>
         fail(e instanceof Error ? e.message : String(e)),
       );
       process.stderr.write("generating update... ");
       const update = await engine.generateUpdate(state, summary, vibes);
-      const next = applyUpdate(state, update);
+      let next = applyUpdate(state, update);
+
+      // Abstract any basin that has repeatedly filled its keyword slots.
+      // Separate from the update call on purpose: that one answers a local
+      // question and never prunes, so eviction by recency was quietly deciding
+      // what a basin remembered.
+      const due = basinsNeedingConsolidation(next);
+      for (const basin of due) {
+        process.stderr.write(`consolidating ${basin.label}... `);
+        const before = [...basin.keywords];
+        const keywords = await consolidateBasin(engine, basin, models.update);
+        next = applyConsolidation(next, basin.id, keywords);
+        consolidations.push({ basin: basin.label, before, after: keywords });
+      }
+
       await store.save(next, { engine: "cli", model: models.update });
       await runs.append({
         ts: new Date().toISOString(),
@@ -146,6 +161,11 @@ async function main() {
       console.log(`  ${summary}`);
       console.log(`  vibes: ${vibes.join(", ") || "none"}`);
       console.log(`  basins touched: ${update.basin_updates.length}, new connections: ${update.new_connections.length}`);
+      for (const c of consolidations) {
+        console.log(`  consolidated ${c.basin}: ${c.before.length} -> ${c.after.length} keywords`);
+        console.log(`    before: ${c.before.join(", ")}`);
+        console.log(`    after:  ${c.after.join(", ")}`);
+      }
       if (update.new_basin) console.log(`  new basin: ${update.new_basin.label}`);
       console.log(renderState(next));
       break;
