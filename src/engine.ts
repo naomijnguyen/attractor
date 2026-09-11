@@ -11,13 +11,42 @@ import type { AttractorState, AttractorUpdate, Env } from "./types";
  * so neither path can quietly drift from the other.
  */
 export interface Engine {
-  generateUpdate(
-    state: AttractorState,
-    summary: string,
-    vibes: string[],
-  ): Promise<AttractorUpdate>;
-  /** Free-form call, used for summarizing a raw transcript. */
+  /**
+   * The single primitive. Both engines must place `system` and `user` in the
+   * same roles, or any comparison between them measures the asymmetry rather
+   * than the transport.
+   */
+  call(system: string, user: string, model: string, maxTokens: number): Promise<string>;
+  /** Summarize or otherwise analyze text. Shares ANALYSIS_SYSTEM across engines. */
   complete(prompt: string, model?: string, maxTokens?: number): Promise<string>;
+  generateUpdate(state: AttractorState, summary: string, vibes: string[]): Promise<AttractorUpdate>;
+}
+
+/** System prompt for analysis calls. Identical on both engines. */
+export const ANALYSIS_SYSTEM =
+  "You are a text analysis tool. Follow the user's instructions exactly and " +
+  "return only what is asked, with no preamble and no commentary.";
+
+/** User message for update generation. The instructions live in the system prompt. */
+const UPDATE_INSTRUCTION = "Generate the attractor update for this conversation.";
+
+/**
+ * Update generation, defined once and shared.
+ *
+ * Both engines route through `Engine.call` with the attractor prompt as the
+ * system prompt and a fixed short user turn — so the request is equivalent
+ * whichever transport carries it.
+ */
+async function generateVia(
+  engine: Engine,
+  model: string,
+  subject: string,
+  state: AttractorState,
+  summary: string,
+  vibes: string[],
+): Promise<AttractorUpdate> {
+  const system = buildUpdatePrompt(state, summary, vibes, subject);
+  return parseUpdate(await engine.call(system, UPDATE_INSTRUCTION, model, 800));
 }
 
 /**
@@ -50,7 +79,7 @@ export class ApiEngine implements Engine {
     private models: ModelConfig = DEFAULT_MODELS,
   ) {}
 
-  private async call(system: string, user: string, model: string, maxTokens: number): Promise<string> {
+  async call(system: string, user: string, model: string, maxTokens: number): Promise<string> {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -58,44 +87,54 @@ export class ApiEngine implements Engine {
         "x-api-key": this.apiKey,
         "anthropic-version": "2023-06-01",
       },
+      // No temperature. Two reasons, and the second is the important one:
+      // newer models reject it outright (400 "`temperature` is deprecated for
+      // this model"), and `claude -p` never exposed it — so sending it here
+      // made the two engines diverge on sampling, which is precisely what the
+      // cli-vs-api comparison is meant to detect.
       body: JSON.stringify({
         model,
         max_tokens: maxTokens,
-        temperature: 0.3,
         system,
         messages: [{ role: "user", content: user }],
       }),
     });
-    if (!response.ok) throw new Error(`Claude API error: ${response.status}`);
-    const result = (await response.json()) as { content: Array<{ text: string }> };
-    return result.content[0]?.text ?? "";
+    if (!response.ok) {
+      // Surface the API's own message. A bare status code turns a one-line
+      // fix into a guessing game.
+      let detail = "";
+      try {
+        const body = (await response.json()) as { error?: { type?: string; message?: string } };
+        detail = body.error?.message ? ` — ${body.error.type}: ${body.error.message}` : "";
+      } catch {
+        detail = "";
+      }
+      throw new Error(`Claude API error: ${response.status}${detail}`);
+    }
+    const result = (await response.json()) as {
+      content: Array<{ type: string; text?: string }>;
+    };
+    // Not content[0]: reasoning models return a thinking block first, which has
+    // no `text` field. Take the first actual text block.
+    const text = result.content.find((b) => b.type === "text")?.text;
+    if (text === undefined) {
+      throw new Error(
+        `No text block in response (blocks: ${result.content.map((b) => b.type).join(", ") || "none"})`,
+      );
+    }
+    return text;
   }
 
   async complete(prompt: string, model?: string, maxTokens = 300): Promise<string> {
-    return this.call("", prompt, model ?? this.models.summary, maxTokens);
+    return this.call(ANALYSIS_SYSTEM, prompt, model ?? this.models.summary, maxTokens);
   }
 
-  async generateUpdate(state: AttractorState, summary: string, vibes: string[]): Promise<AttractorUpdate> {
-    const text = await this.call(
-      buildUpdatePrompt(state, summary, vibes, this.subject),
-      "Generate the attractor update for this conversation.",
-      this.models.update,
-      800,
-    );
-    return parseUpdate(text);
+  generateUpdate(state: AttractorState, summary: string, vibes: string[]): Promise<AttractorUpdate> {
+    return generateVia(this, this.models.update, this.subject, state, summary, vibes);
   }
 }
 
 // === Local `claude -p` ===
-
-/**
- * Replaces Claude Code's coding-assistant system prompt. Without this the
- * model is told it is a software engineering agent, which tilts summaries
- * toward technical framing and differs from what the hosted engine sends.
- */
-const SYSTEM_PROMPT =
-  "You are a text analysis tool. Follow the user's instructions exactly and " +
-  "return only what is asked, with no preamble and no commentary.";
 
 /**
  * Drives the Claude Code CLI in print mode. No API key: `claude -p` uses the
@@ -125,6 +164,14 @@ export class ClaudeCliEngine implements Engine {
   }
 
   async complete(prompt: string, model?: string): Promise<string> {
+    return this.call(ANALYSIS_SYSTEM, prompt, model ?? this.models.summary, 0);
+  }
+
+  /**
+   * `maxTokens` is ignored: `claude -p` has no equivalent flag. That is a real
+   * difference from the API engine and the only one left.
+   */
+  async call(system: string, user: string, model: string, _maxTokens: number): Promise<string> {
     const { spawn } = await import("node:child_process");
     return new Promise((resolve, reject) => {
       // Without --model, `claude -p` inherits whatever model the user's Claude
@@ -140,11 +187,11 @@ export class ClaudeCliEngine implements Engine {
       // HTTP API call the hosted engine makes:
       const args = [
         "-p",
-        "--model", this.forceModel ?? model ?? this.models.summary,
+        "--model", this.forceModel ?? model,
         "--tools", "",                 // no tools: the only output is text
         "--strict-mcp-config",         // no MCP servers
         "--setting-sources", "",       // no CLAUDE.md, user or project
-        "--system-prompt", SYSTEM_PROMPT,
+        "--system-prompt", system,
       ];
       const proc = spawn(this.bin, args, { stdio: ["pipe", "pipe", "pipe"] });
       let out = "";
@@ -158,18 +205,13 @@ export class ClaudeCliEngine implements Engine {
         if (code !== 0) return reject(new Error(`\`${this.bin} -p\` exited ${code}: ${err.trim()}`));
         resolve(out.trim());
       });
-      proc.stdin.write(prompt);
+      proc.stdin.write(user);
       proc.stdin.end();
     });
   }
 
-  async generateUpdate(state: AttractorState, summary: string, vibes: string[]): Promise<AttractorUpdate> {
-    // No system/user split in print mode -- the prompt already ends with its
-    // own instruction to return only JSON.
-    const prompt =
-      buildUpdatePrompt(state, summary, vibes, this.subject) +
-      "\n\nGenerate the attractor update for this conversation.";
-    return parseUpdate(await this.complete(prompt, this.forceModel ?? this.models.update));
+  generateUpdate(state: AttractorState, summary: string, vibes: string[]): Promise<AttractorUpdate> {
+    return generateVia(this, this.forceModel ?? this.models.update, this.subject, state, summary, vibes);
   }
 }
 

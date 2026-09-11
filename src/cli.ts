@@ -53,7 +53,9 @@ async function summarize(engine: Engine, transcript: string, model: string) {
     const parsed = JSON.parse(clean) as { summary: string; vibes?: string[] };
     return { summary: parsed.summary, vibes: parsed.vibes ?? [] };
   } catch {
-    fail(`Could not parse a summary from the model's reply:\n${clean.slice(0, 300)}`);
+    // Throw rather than exit: `compare` needs one leg's failure to be one
+    // leg's failure, not the end of the run.
+    throw new Error(`Could not parse a summary from the reply: ${clean.slice(0, 200) || "(empty)"}`);
   }
 }
 
@@ -117,7 +119,9 @@ async function main() {
 
       const engine = new ClaudeCliEngine(subject, "claude", undefined, models);
       process.stderr.write("Summarizing... ");
-      const { summary, vibes } = await summarize(engine, transcript, models.summary);
+      const { summary, vibes } = await summarize(engine, transcript, models.summary).catch((e: unknown) =>
+        fail(e instanceof Error ? e.message : String(e)),
+      );
       process.stderr.write("generating update... ");
       const update = await engine.generateUpdate(state, summary, vibes);
       const next = applyUpdate(state, update);

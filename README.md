@@ -147,6 +147,14 @@ Running the same model through both `cli:` and `api:` is the control: identical
 prompt, different transport, so they should agree. If they don't, the two
 engines aren't sending equivalent requests.
 
+Making that true took more than sharing the prompt text. Both engines route
+through one primitive, `Engine.call(system, user, model, maxTokens)`, because
+they had previously placed the same text in *different roles* — the API sent
+the attractor prompt as the system prompt, while the CLI concatenated it into
+the user turn. A comparison run at that point would have measured the
+asymmetry, not the transport. One known difference remains: `claude -p` has no
+max-tokens flag, so that argument is ignored on the CLI side.
+
 Running each model twice separates run-to-run noise from a real difference.
 One conversation, two runs per model:
 

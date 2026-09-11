@@ -2,7 +2,7 @@ import type { BasinSeed, Env } from "./types";
 import { json, error, matchRoute } from "./utils";
 import { applyUpdate, createInitialState, toBasinId } from "./model";
 import { getAttractorState, saveAttractorState } from "./store";
-import { generateAttractorUpdate } from "./engine";
+import { ApiEngine, generateAttractorUpdate, modelsFromEnv } from "./engine";
 
 // === Attractor API Routes ===
 
@@ -159,47 +159,36 @@ export async function handleAttractorRoutes(
       content: m.content.length > 500 ? m.content.slice(0, 500) + "..." : m.content,
     }));
 
-    // Summarize using Haiku
+    // Summarize the transcript before it reaches the attractor.
     const summaryPrompt = `Analyze this conversation and return a JSON object with exactly two fields:
 1. "summary": A concise 1-2 sentence summary of what was discussed and accomplished.
 2. "vibes": An array of 1-4 vibe tags that describe the conversational energy. Choose from: playful, serious, technical, philosophical, creative, adorable, nerdy, focused, casual, witty, warm, chaotic, chill, intense, curious, supportive, sarcastic, wholesome, brainstormy, deep.
 
 Return ONLY valid JSON, no markdown formatting, no explanation.`;
 
-    const summaryResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 300,
-        temperature: 0.3,
-        system: summaryPrompt,
-        messages: truncated,
-      }),
-    });
-
-    if (!summaryResponse.ok) {
-      return error(`Summary generation failed: ${summaryResponse.status}`, 500);
-    }
-
-    const summaryResult = (await summaryResponse.json()) as {
-      content: Array<{ type: string; text: string }>;
-    };
+    // Route through the shared engine rather than an inline fetch. This path
+    // previously hardcoded a model, sent a now-deprecated temperature, and
+    // read content[0] — which is a thinking block on reasoning models. All
+    // three were already fixed in ApiEngine and none of the fixes reached
+    // here, because this duplicated the call instead of using it.
+    const engine = new ApiEngine(env.ANTHROPIC_API_KEY, env.ATTRACTOR_SUBJECT, modelsFromEnv(env));
+    const transcript = truncated
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+      .join("\n\n");
 
     let summary: string;
     let vibes: string[];
     try {
-      const text = summaryResult.content[0]?.text || "";
+      const text = await engine.complete(`${summaryPrompt}\n\nConversation:\n${transcript}`);
       const clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const parsed = JSON.parse(clean);
+      const parsed = JSON.parse(clean) as { summary: string; vibes?: string[] };
       summary = parsed.summary;
       vibes = parsed.vibes || [];
-    } catch {
-      return error("Failed to parse summary from conversation", 500);
+    } catch (err) {
+      return error(
+        `Failed to summarize conversation: ${err instanceof Error ? err.message : "unknown"}`,
+        500,
+      );
     }
 
     // Now feed into attractor
