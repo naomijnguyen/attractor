@@ -13,6 +13,10 @@ export interface Env {
    * Set via `wrangler secret put ATTRACTOR_TOKEN`. Requests fail closed if unset.
    */
   ATTRACTOR_TOKEN: string;
+  /** Override the model used to summarize transcripts. */
+  ATTRACTOR_SUMMARY_MODEL?: string;
+  /** Override the model used to generate attractor updates. */
+  ATTRACTOR_UPDATE_MODEL?: string;
   /**
    * Whose engagement this attractor models. Injected into the update prompt
    * and the system-prompt context block. Defaults to "the user".

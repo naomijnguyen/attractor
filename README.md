@@ -133,6 +133,65 @@ parameter and the prompt is built in one place, "do different models read a
 conversation differently?" becomes a measurable question rather than a vague
 one. The readout is basin deltas, not prose.
 
+### Choosing models
+
+Two jobs, two models. Generating an update needs judgement about what a
+conversation meant; summarizing a transcript doesn't, so that goes somewhere
+cheap. Override either:
+
+```bash
+ATTRACTOR_SUMMARY_MODEL=claude-haiku-4-5-20251001 \
+ATTRACTOR_UPDATE_MODEL=claude-opus-5 \
+  ./dist/attractor.mjs ingest --session
+```
+
+The hosted Worker reads the same two names from `wrangler.toml`. Defaults live
+in one place, `DEFAULT_MODELS` in `src/engine.ts`.
+
+---
+
+## How this uses Claude Code
+
+Local mode shells out to the `claude` binary on your machine, so **it runs
+under your own Claude Code login** — your subscription, your quota, your
+machine. Nothing is proxied through anyone else's account, and there's no
+shared credential.
+
+Two consequences worth knowing before you run it on a large history:
+
+- **It bills against your subscription quota**, not per-token API billing.
+- **It's slower than the API** — a process start per call, and `ingest` makes
+  two calls. Fine for a handful of conversations, wrong for hundreds. Use
+  hosted mode with an API key if you're batching.
+
+### Making `claude -p` behave like an API call
+
+This turned out to be the subtle part, and it's worth spelling out if you're
+building anything similar.
+
+`claude -p` is not a completion endpoint. It's an agent. Left alone it carries
+Claude Code's own system prompt, the built-in tools, your working directory,
+any MCP servers, and your `CLAUDE.md`. Given a summarization prompt inside a
+code repository, a capable model may reasonably decide the helpful thing is to
+go *read the repository* — which is good agent behaviour and a broken
+inference call. A weaker model just answers, so this fails only when you reach
+for a better one.
+
+Four flags strip the environment back to something reproducible:
+
+```bash
+claude -p \
+  --model <id> \
+  --tools ""              # no tools, so text is the only possible output
+  --strict-mcp-config     # no MCP servers
+  --setting-sources ""    # no CLAUDE.md, user or project
+  --system-prompt "..."   # replace the coding-assistant framing
+```
+
+The `--setting-sources` one matters most for a tool you distribute. Without
+it, whoever runs this gets summaries shaped by *their* `CLAUDE.md` — so the
+same conversation produces different attractor updates on different machines.
+
 `ingest` makes two `claude -p` calls: one to summarize the transcript, one to
 generate the update. Expect a few seconds each — the CLI starts a process per
 call, which is fine for a handful of conversations and wrong for hundreds.

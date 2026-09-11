@@ -20,10 +20,26 @@ export interface Engine {
   complete(prompt: string, model?: string, maxTokens?: number): Promise<string>;
 }
 
-/** Generating an update needs judgement about what a conversation meant. */
-export const UPDATE_MODEL = "claude-opus-4-6";
-/** Summarizing a transcript does not, so route it to something cheap. */
-export const SUMMARY_MODEL = "claude-haiku-4-5-20251001";
+/**
+ * Which model does which job.
+ *
+ * Generating an update needs judgement about what a conversation meant;
+ * summarizing a transcript does not, so that goes somewhere cheap. Both are
+ * overridable — pinned ids age badly, and you may want to try others.
+ */
+export interface ModelConfig {
+  summary: string;
+  update: string;
+}
+
+export const DEFAULT_MODELS: ModelConfig = {
+  summary: "claude-haiku-4-5-20251001",
+  update: "claude-opus-5",
+};
+
+/** @deprecated Prefer DEFAULT_MODELS; kept so existing callers still resolve. */
+export const SUMMARY_MODEL = DEFAULT_MODELS.summary;
+export const UPDATE_MODEL = DEFAULT_MODELS.update;
 
 // === Anthropic HTTP API ===
 
@@ -31,6 +47,7 @@ export class ApiEngine implements Engine {
   constructor(
     private apiKey: string,
     private subject = "the user",
+    private models: ModelConfig = DEFAULT_MODELS,
   ) {}
 
   private async call(system: string, user: string, model: string, maxTokens: number): Promise<string> {
@@ -54,15 +71,15 @@ export class ApiEngine implements Engine {
     return result.content[0]?.text ?? "";
   }
 
-  async complete(prompt: string, model = SUMMARY_MODEL, maxTokens = 300): Promise<string> {
-    return this.call("", prompt, model, maxTokens);
+  async complete(prompt: string, model?: string, maxTokens = 300): Promise<string> {
+    return this.call("", prompt, model ?? this.models.summary, maxTokens);
   }
 
   async generateUpdate(state: AttractorState, summary: string, vibes: string[]): Promise<AttractorUpdate> {
     const text = await this.call(
       buildUpdatePrompt(state, summary, vibes, this.subject),
       "Generate the attractor update for this conversation.",
-      UPDATE_MODEL,
+      this.models.update,
       800,
     );
     return parseUpdate(text);
@@ -94,6 +111,7 @@ export class ClaudeCliEngine implements Engine {
     private bin = "claude",
     /** Overrides per-call model selection. Used by `attractor compare`. */
     private forceModel?: string,
+    private models: ModelConfig = DEFAULT_MODELS,
   ) {}
 
   /** True if the CLI is on PATH. */
@@ -106,7 +124,7 @@ export class ClaudeCliEngine implements Engine {
     });
   }
 
-  async complete(prompt: string, model = SUMMARY_MODEL): Promise<string> {
+  async complete(prompt: string, model?: string): Promise<string> {
     const { spawn } = await import("node:child_process");
     return new Promise((resolve, reject) => {
       // Without --model, `claude -p` inherits whatever model the user's Claude
@@ -122,7 +140,7 @@ export class ClaudeCliEngine implements Engine {
       // HTTP API call the hosted engine makes:
       const args = [
         "-p",
-        "--model", this.forceModel ?? model,
+        "--model", this.forceModel ?? model ?? this.models.summary,
         "--tools", "",                 // no tools: the only output is text
         "--strict-mcp-config",         // no MCP servers
         "--setting-sources", "",       // no CLAUDE.md, user or project
@@ -151,8 +169,16 @@ export class ClaudeCliEngine implements Engine {
     const prompt =
       buildUpdatePrompt(state, summary, vibes, this.subject) +
       "\n\nGenerate the attractor update for this conversation.";
-    return parseUpdate(await this.complete(prompt, this.forceModel ?? UPDATE_MODEL));
+    return parseUpdate(await this.complete(prompt, this.forceModel ?? this.models.update));
   }
+}
+
+/** Read model overrides from Worker bindings, falling back to defaults. */
+export function modelsFromEnv(env: Env): ModelConfig {
+  return {
+    summary: env.ATTRACTOR_SUMMARY_MODEL || DEFAULT_MODELS.summary,
+    update: env.ATTRACTOR_UPDATE_MODEL || DEFAULT_MODELS.update,
+  };
 }
 
 /** Signature the Worker routes already call. */
@@ -162,5 +188,9 @@ export function generateAttractorUpdate(
   summary: string,
   vibes: string[],
 ): Promise<AttractorUpdate> {
-  return new ApiEngine(env.ANTHROPIC_API_KEY, env.ATTRACTOR_SUBJECT).generateUpdate(state, summary, vibes);
+  return new ApiEngine(env.ANTHROPIC_API_KEY, env.ATTRACTOR_SUBJECT, modelsFromEnv(env)).generateUpdate(
+    state,
+    summary,
+    vibes,
+  );
 }

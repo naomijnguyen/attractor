@@ -17,7 +17,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { applyUpdate, buildAttractorContext, createInitialState } from "./model";
-import { ClaudeCliEngine, SUMMARY_MODEL, UPDATE_MODEL, type Engine } from "./engine";
+import { ClaudeCliEngine, DEFAULT_MODELS, type Engine, type ModelConfig } from "./engine";
 import { renderComparison, renderHistory, renderSessions, renderState } from "./render";
 import { listSessions, parseSession, toTranscript } from "./sessions";
 import { FileStore } from "./store";
@@ -43,7 +43,7 @@ async function requireState(store: FileStore) {
   return state;
 }
 
-async function summarize(engine: Engine, transcript: string, model = SUMMARY_MODEL) {
+async function summarize(engine: Engine, transcript: string, model: string) {
   const capped = transcript.length > 40000 ? transcript.slice(-40000) : transcript;
   const raw = await engine.complete(SUMMARY_PROMPT + capped, model);
   const clean = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
@@ -85,6 +85,10 @@ async function main() {
   const [command = "show", arg, extra] = process.argv.slice(2);
   const store = new FileStore(process.env.ATTRACTOR_STATE || FileStore.defaultPath());
   const subject = process.env.ATTRACTOR_SUBJECT || "the user";
+  const models: ModelConfig = {
+    summary: process.env.ATTRACTOR_SUMMARY_MODEL || DEFAULT_MODELS.summary,
+    update: process.env.ATTRACTOR_UPDATE_MODEL || DEFAULT_MODELS.update,
+  };
 
   switch (command) {
     case "seed": {
@@ -108,9 +112,9 @@ async function main() {
       const transcript = await resolveTranscript(arg, extra);
       if (!transcript.trim()) fail("Transcript is empty.");
 
-      const engine = new ClaudeCliEngine(subject);
+      const engine = new ClaudeCliEngine(subject, "claude", undefined, models);
       process.stderr.write("Summarizing... ");
-      const { summary, vibes } = await summarize(engine, transcript);
+      const { summary, vibes } = await summarize(engine, transcript, models.summary);
       process.stderr.write("generating update... ");
       const update = await engine.generateUpdate(state, summary, vibes);
       const next = applyUpdate(state, update);
@@ -140,13 +144,15 @@ async function main() {
       const transcript = await resolveTranscript(arg, extra);
       if (!transcript.trim()) fail("Transcript is empty.");
 
-      const models = (process.env.ATTRACTOR_COMPARE_MODELS || `${SUMMARY_MODEL},${UPDATE_MODEL}`)
+      const compareModels = (
+        process.env.ATTRACTOR_COMPARE_MODELS || `${models.summary},${models.update}`
+      )
         .split(",")
         .map((m) => m.trim())
         .filter(Boolean);
 
       const results = [];
-      for (const model of models) {
+      for (const model of compareModels) {
         process.stderr.write(`${model}... `);
         const engine = new ClaudeCliEngine(subject, "claude", model);
         try {
