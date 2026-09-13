@@ -1,0 +1,203 @@
+<title>Mapping Analogies</title>
+<style>
+  :root {
+    --bg: #fbfbf9;
+    --panel: #ffffff;
+    --ink: #1c1c1a;
+    --muted: #6b6b64;
+    --border: #e5e4df;
+    --good-bg: #e7f4ec;
+    --good-fg: #1f6b3f;
+    --cav-bg: #fdf3e2;
+    --cav-fg: #9a6a12;
+    --bad-bg: #fbe8e6;
+    --bad-fg: #b23a2e;
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --bg: #17171a; --panel: #1f1f23; --ink: #ececec; --muted: #9a9aa2; --border: #33333a;
+      --good-bg: #14311f; --good-fg: #6fd398;
+      --cav-bg: #3a2e14; --cav-fg: #e6b45a;
+      --bad-bg: #3a1c18; --bad-fg: #f08d80;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17171a; --panel: #1f1f23; --ink: #ececec; --muted: #9a9aa2; --border: #33333a;
+    --good-bg: #14311f; --good-fg: #6fd398;
+    --cav-bg: #3a2e14; --cav-fg: #e6b45a;
+    --bad-bg: #3a1c18; --bad-fg: #f08d80;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; line-height: 1.5; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 32px 22px 56px; }
+  h1 { font-size: 1.5rem; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 22px; font-size: 0.95rem; }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 18px; }
+  .tag { display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .t-g { background: var(--good-bg); color: var(--good-fg); }
+  .t-c { background: var(--cav-bg); color: var(--cav-fg); }
+  .t-b { background: var(--bad-bg); color: var(--bad-fg); }
+  .note { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; font-size: 0.9rem; color: var(--muted); margin: 0 0 24px; }
+  .note b, .note i { color: var(--ink); }
+  h2 { font-size: 1.05rem; font-weight: 600; margin: 30px 0 10px; }
+  .scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 660px; font-size: 0.88rem; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .map { font-weight: 600; }
+  .arrow { color: var(--muted); font-weight: 400; }
+  .reason { color: var(--muted); }
+  .vcell { white-space: nowrap; }
+  .tally { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 24px; font-size: 0.9rem; color: var(--muted); }
+  .tally b { color: var(--ink); }
+  footer { margin-top: 26px; font-size: 0.82rem; color: var(--muted); }
+</style>
+
+<div class="wrap">
+  <h1>Immunology ↔ Transformer: Analogy Map</h1>
+  <p class="sub">An exploratory set of analogies for thinking — not a claim about transformer internals. Rated by whether each carries a <i>true</i> intuition or a misleading one.</p>
+
+  <div class="legend">
+    <span class="tag t-g">Illuminating</span>
+    <span class="tag t-c">Illuminating · with caveat</span>
+    <span class="tag t-b">Misleading</span>
+  </div>
+
+  <div class="note">
+    <b>Illuminating</b> = imports a true intuition about how transformers work. &nbsp;<b>Caveat</b> = the intuition is real but has a boundary worth naming, or a label to fix. &nbsp;<b>Misleading</b> = imports an intuition that isn't true of the mechanism. Since the goal is understanding, "loose" is not a demerit — only "misleading" is.
+  </div>
+
+  <h2>Section 2 — Component analogies</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Analogy</th><th class="vcell">Rating</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="map">HEVs <span class="arrow">→</span> Residual stream</td>
+          <td><span class="tag t-g">Illuminating</span></td>
+          <td class="reason">Reframed as "how context is carried through," this lands well. The residual stream is the persistent channel every layer reads from and writes back into — the conduit that threads state through depth. Better than the doc's "stabilized by upstream signals."</td>
+        </tr>
+        <tr>
+          <td class="map">TLS formation <span class="arrow">→</span> Attractor basin formation</td>
+          <td><span class="tag t-c">Caveat</span></td>
+          <td class="reason">Self-flagged speculative. Fine as a metaphor for context narrowing the response space (a real conditioning effect). Just don't read it as the model literally having dynamical basins inside a forward pass.</td>
+        </tr>
+        <tr>
+          <td class="map">Germinal centers <span class="arrow">→</span> Training iterations</td>
+          <td><span class="tag t-c">Caveat</span></td>
+          <td class="reason">Stronger than I first said. Both are "opaque internal process → generalization under a target," and SGD does carry real stochastic noise (mini-batch sampling, implicated in generalization). Boundary to keep: the randomness sits in different places — SHM is propose-random / select-directed; SGD is directed-propose with noise on top.</td>
+        </tr>
+        <tr>
+          <td class="map">PD-1/PD-L1 <span class="arrow">→</span> Attention masking</td>
+          <td><span class="tag t-b">Misleading</span></td>
+          <td class="reason">(Parked for a later pass.) As stated it conflates a fixed, deterministic causal mask with an adaptive, signal-dependent brake — different kinds of thing.</td>
+        </tr>
+        <tr>
+          <td class="map">CD28–CD80/86 <span class="arrow">→</span> LayerNorm / residual connections</td>
+          <td><span class="tag t-c">Caveat</span></td>
+          <td class="reason">Bundles two separate mechanisms (normalization vs. skip connections). Pick one — the "required co-signal" intuition fits residual connections better than LayerNorm.</td>
+        </tr>
+        <tr>
+          <td class="map">CTLA-4 vs CD28 <span class="arrow">→</span> Softmax competition</td>
+          <td><span class="tag t-g">Illuminating</span></td>
+          <td class="reason">Softmax forces attention weights to sum to 1, so tokens genuinely compete for a fixed budget. A real shared property — the sharpest row.</td>
+        </tr>
+        <tr>
+          <td class="map">Chemokines <span class="arrow">→</span> Positional encodings</td>
+          <td><span class="tag t-c">Caveat</span></td>
+          <td class="reason">Both are about "where," but a positional encoding is a fixed index signal, not a diffusible gradient. Useful as a pointer, thin if pushed.</td>
+        </tr>
+        <tr>
+          <td class="map">TCR-MHC <span class="arrow">→</span> Token-to-token attention</td>
+          <td><span class="tag t-g">Illuminating</span></td>
+          <td class="reason">Attention is pairwise, specificity-weighted interaction between units. "Specific recognition" is a fair intuition to carry over.</td>
+        </tr>
+        <tr>
+          <td class="map">BCR repertoire <span class="arrow">→</span> Model weights</td>
+          <td><span class="tag t-g">Illuminating</span></td>
+          <td class="reason">Weights are representations shaped by exposure. True, if generic to any learning system.</td>
+        </tr>
+        <tr>
+          <td class="map">Cis interactions <span class="arrow">→</span> Per-token MLP processing <span style="color:var(--muted)">(relabeled)</span></td>
+          <td><span class="tag t-c">Caveat</span></td>
+          <td class="reason">The phenomenon is real — a word with two senses gets a context-dependent representation. Only the label needs fixing: the "within-token" transform is the MLP/feed-forward sublayer, not a kind of self-attention.</td>
+        </tr>
+        <tr>
+          <td class="map">Trans interactions <span class="arrow">→</span> Cross-token attention</td>
+          <td><span class="tag t-g">Illuminating</span></td>
+          <td class="reason">Context pulled in from other tokens is exactly what attention does — the reason it beat static embeddings. Pairs cleanly with the relabeled cis row: trans = context in, cis = the token's own transform.</td>
+        </tr>
+        <tr>
+          <td class="map">Naive CD8 T cells <span class="arrow">→</span> First transformer layer</td>
+          <td><span class="tag t-c">Caveat</span></td>
+          <td class="reason">Early layers do capture lower-level features ("present, not yet specialized"). Just don't pin it to the literal first layer — it's a gradient across depth.</td>
+        </tr>
+        <tr>
+          <td class="map">Memory T cells <span class="arrow">→</span> Trained weights</td>
+          <td><span class="tag t-g">Illuminating</span></td>
+          <td class="reason">Weights persist patterns from prior exposure. Fine.</td>
+        </tr>
+        <tr>
+          <td class="map">CD160/lipid raft <span class="arrow">→</span> Feature context-dependency</td>
+          <td><span class="tag t-g">Illuminating</span></td>
+          <td class="reason">Points straight at a real, documented finding: polysemanticity / superposition — features behave differently depending on context. The "study in context, not isolation" instinct is a live interpretability debate.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Section 5 — Signaling cascade analogies</h2>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>Analogy</th><th class="vcell">Rating</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="map">Surface receptors detect patterns <span class="arrow">→</span> Attention detects token patterns</td>
+          <td><span class="tag t-g">Illuminating</span></td>
+          <td class="reason">Attention computes token relevance. Fair high-level intuition.</td>
+        </tr>
+        <tr>
+          <td class="map">Signal transduction (NF-κB) <span class="arrow">→</span> Non-linear activations</td>
+          <td><span class="tag t-c">Caveat</span></td>
+          <td class="reason">Activation functions supply non-linearity, but they aren't a multi-step signaling cascade. Don't carry over the "relay" intuition.</td>
+        </tr>
+        <tr>
+          <td class="map">Cytokine production <span class="arrow">→</span> Layer outputs added to residual stream</td>
+          <td><span class="tag t-g">Illuminating</span></td>
+          <td class="reason">Layers genuinely write their outputs into the residual stream. Mechanically apt.</td>
+        </tr>
+        <tr>
+          <td class="map">Cell recruitment by diffuse signals <span class="arrow">→</span> Activating heads in later layers</td>
+          <td><span class="tag t-c">Caveat</span></td>
+          <td class="reason">Later layers do read earlier outputs, but "recruitment" imports an agency the mechanism doesn't have.</td>
+        </tr>
+        <tr>
+          <td class="map">HEV stabilization <span class="arrow">→</span> Layer normalization</td>
+          <td><span class="tag t-g">Illuminating</span></td>
+          <td class="reason">LayerNorm normalizes/stabilizes activations as they accumulate — consistent with the HEV-as-conduit reframe above.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Section 4 — Attractor-basin narrative</h2>
+  <div class="note">
+    <span class="tag t-c">Caveat</span> &nbsp;The core intuition is real: context conditions what comes next, so a conversation does narrow the space of likely continuations. Keep the canyon / centrifugation imagery explicitly as metaphor — the architecture has no literal attractor dynamics within a forward pass.
+  </div>
+
+  <h2>TNFSF visualization (the JSX file)</h2>
+  <div class="note">
+    <span class="tag t-b">Misleading</span> &nbsp;The AI column — HVEM → "orchestration layer," BTLA → "safety layer," DcR3 → "noise filter," CD8 T → "the transformer itself" — is <i>assigned</i>, not derived from any identifiable component. The receptor biology may be fine; the AI labels don't carry intuitions about real mechanisms. Of the two artifacts, the Section-2 map is the one worth developing.
+  </div>
+
+  <div class="tally">
+    <span><b>10</b> illuminating</span>
+    <span><b>9</b> illuminating with caveat</span>
+    <span><b>2</b> misleading</span>
+  </div>
+
+  <footer>
+    Read as an exploratory analogy set, this holds up far better than as an architecture claim: most rows carry a usable intuition, a third need a boundary named, and only two point the wrong way. Two edits would tighten it — soften "isomorphic / became structural" at the top of the source doc, and relabel "cis → self-attention" as "cis → per-token MLP."
+  </footer>
+</div>

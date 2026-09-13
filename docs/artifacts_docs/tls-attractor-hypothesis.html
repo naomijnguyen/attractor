@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stable, Because It Keeps Adapting — A TLS Model of Multi-Turn Attractors</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Newsreader:ital,opsz@0,6..72;1,6..72&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root{
+    --ink:#0c0d10;
+    --paper:#f4f1ea;
+    --paper-dim:#cfcabd;
+    --paper-faint:#8d8a82;
+    --faint:#75727f;
+    --line:#26272e;
+    --line-soft:#1a1b21;
+    --green:#5fb98a;
+    --green-dim:#2c5f48;
+    --green-glow:rgba(95,185,138,.16);
+    --amber:#d6a14a;
+    --amber-dim:#6e5326;
+    --amber-glow:rgba(214,161,74,.16);
+    --red:#cf6b5c;
+    --red-dim:#5f312b;
+    --serif:'Fraunces',serif;
+    --read:'Newsreader',serif;
+    --mono:'JetBrains Mono',monospace;
+  }
+
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--ink);
+    color:var(--paper);
+    font-family:var(--read);
+    font-size:19px;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:1;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+    mix-blend-mode:overlay;
+  }
+
+  /* progress rail */
+  .rail{position:fixed;top:0;left:0;height:2px;background:var(--green);width:0%;z-index:50;transition:width .12s linear;box-shadow:0 0 12px var(--green-glow)}
+
+  .wrap{max-width:760px;margin:0 auto;padding:0 28px;position:relative;z-index:2}
+
+  /* HERO */
+  header{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:80px 0 60px;position:relative}
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.32em;text-transform:uppercase;color:var(--faint);margin-bottom:34px}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(38px,7vw,68px);line-height:1.04;letter-spacing:-.02em;margin-bottom:8px}
+  h1 em{font-style:italic;color:var(--green)}
+  .sub{font-family:var(--read);font-style:italic;font-size:clamp(19px,2.6vw,25px);color:var(--paper-dim);max-width:30ch;margin-top:26px;line-height:1.5}
+  .byline{font-family:var(--mono);font-size:12.5px;color:var(--faint);margin-top:48px;letter-spacing:.04em}
+  .byline b{color:var(--paper-dim);font-weight:500}
+  .scrollcue{position:absolute;bottom:34px;left:28px;font-family:var(--mono);font-size:11px;letter-spacing:.25em;text-transform:uppercase;color:var(--faint);display:flex;align-items:center;gap:10px}
+  .scrollcue .dot{width:5px;height:5px;border-radius:50%;background:var(--green);animation:pulse 1.8s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.3;transform:scale(1)}50%{opacity:1;transform:scale(1.5)}}
+
+  /* SECTIONS */
+  section{padding:11vh 0;position:relative}
+  .step{opacity:0;transform:translateY(26px);transition:opacity 1s cubic-bezier(.2,.7,.2,1),transform 1s cubic-bezier(.2,.7,.2,1)}
+  .step.in{opacity:1;transform:none}
+
+  .secnum{font-family:var(--mono);font-size:12px;letter-spacing:.2em;color:var(--faint);margin-bottom:18px;display:flex;align-items:center;gap:14px}
+  .secnum::after{content:"";flex:1;height:1px;background:var(--line)}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(27px,4.4vw,40px);line-height:1.12;letter-spacing:-.015em;margin-bottom:26px}
+  h2 em{font-style:italic;color:var(--green)}
+  p{margin-bottom:22px;color:var(--paper-dim)}
+  p strong{color:var(--paper);font-weight:600}
+  .lead{font-size:21px;color:var(--paper)}
+  .bio{color:var(--green);font-style:italic}
+  .term{font-family:var(--mono);font-size:.82em;background:var(--line-soft);padding:1px 7px;border-radius:4px;color:var(--paper-dim);border:1px solid var(--line)}
+
+  /* pull quote */
+  .pull{font-family:var(--serif);font-style:italic;font-weight:400;font-size:clamp(24px,3.8vw,34px);line-height:1.3;color:var(--paper);border-left:2px solid var(--green);padding:6px 0 6px 30px;margin:46px 0;letter-spacing:-.01em}
+
+  /* the mapping card */
+  .map{margin:40px 0;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.015),transparent)}
+  .map-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch}
+  .map-cell{padding:22px 24px}
+  .map-cell.bioc{border-right:1px solid var(--line)}
+  .map-mid{display:flex;align-items:center;justify-content:center;padding:0 14px;color:var(--faint);font-family:var(--mono);font-size:18px;border-right:1px solid var(--line)}
+  .map-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--faint);margin-bottom:9px}
+  .map-cell.bioc .map-label{color:var(--green-dim)}
+  .map-txt{font-size:16px;line-height:1.5;color:var(--paper-dim)}
+  .map-cell.bioc .map-txt{color:var(--green)}
+
+  /* confidence node */
+  .node{margin:38px 0;border:1px solid var(--line);border-radius:3px;background:rgba(255,255,255,.012);cursor:pointer;transition:border-color .35s,background .35s;position:relative}
+  .node:hover{border-color:var(--paper-faint);background:rgba(255,255,255,.025)}
+  .node-bar{height:3px;width:100%}
+  .node.green .node-bar{background:linear-gradient(90deg,var(--green),var(--green-dim))}
+  .node.amber .node-bar{background:linear-gradient(90deg,var(--amber),var(--amber-dim))}
+  .node-head{display:flex;align-items:flex-start;gap:16px;padding:20px 24px}
+  .badge{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;padding:4px 9px;border-radius:3px;white-space:nowrap;margin-top:3px}
+  .node.green .badge{background:var(--green-glow);color:var(--green);border:1px solid var(--green-dim)}
+  .node.amber .badge{background:var(--amber-glow);color:var(--amber);border:1px solid var(--amber-dim)}
+  .node-claim{font-family:var(--serif);font-size:20px;line-height:1.3;color:var(--paper);font-weight:500;flex:1}
+  .node-toggle{font-family:var(--mono);font-size:11px;color:var(--faint);align-self:center;transition:transform .35s;white-space:nowrap}
+  .node.open .node-toggle{transform:rotate(45deg)}
+  .node-body{max-height:0;overflow:hidden;transition:max-height .5s cubic-bezier(.4,0,.2,1)}
+  .node-body-inner{padding:0 24px 24px 24px;font-size:16px;line-height:1.65;color:var(--paper-dim)}
+  .node-body-inner .sublabel{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:18px 0 8px}
+  .node-body-inner .sublabel:first-child{margin-top:6px}
+  .node-body-inner p{margin-bottom:12px}
+  .cand{border-left:2px solid var(--amber-dim);padding-left:16px;margin:10px 0}
+  .cand b{color:var(--amber);font-weight:500;font-family:var(--mono);font-size:13px}
+
+  /* the edge — visually heaviest */
+  .edge-marker{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);display:inline-flex;align-items:center;gap:8px;margin-bottom:14px}
+  .edge-marker::before{content:"";width:22px;height:1px;background:var(--amber)}
+
+  /* removed-node callout */
+  .ghost{margin:38px 0;border:1px dashed var(--line);border-radius:3px;padding:20px 24px;opacity:.62}
+  .ghost .badge{background:transparent;color:var(--faint);border:1px solid var(--line);text-decoration:line-through}
+  .ghost .node-claim{color:var(--faint);text-decoration:line-through;font-size:18px}
+  .ghost-note{font-size:14.5px;color:var(--faint);margin-top:12px;font-style:italic}
+
+  /* program closer */
+  .program{border:1px solid var(--green-dim);border-radius:3px;padding:30px;margin:40px 0;background:var(--green-glow)}
+  .program .secnum{color:var(--green)}
+  .program .secnum::after{background:var(--green-dim)}
+  .qlist{list-style:none;counter-reset:q}
+  .qlist li{counter-increment:q;position:relative;padding-left:42px;margin-bottom:20px;font-size:17px;line-height:1.55;color:var(--paper)}
+  .qlist li::before{content:"Q" counter(q);position:absolute;left:0;top:1px;font-family:var(--mono);font-size:12px;color:var(--green);border:1px solid var(--green-dim);border-radius:3px;padding:2px 6px;letter-spacing:.05em}
+
+  footer{padding:9vh 0 14vh;border-top:1px solid var(--line);margin-top:6vh}
+  .foot-note{font-family:var(--mono);font-size:12.5px;color:var(--faint);line-height:1.9;letter-spacing:.02em}
+  .foot-note b{color:var(--paper-dim);font-weight:500}
+
+  ::selection{background:var(--green);color:var(--ink)}
+
+  @media(max-width:620px){
+    body{font-size:17.5px}
+    .map-row{grid-template-columns:1fr}
+    .map-cell.bioc{border-right:none;border-bottom:1px solid var(--line)}
+    .map-mid{border-right:none;border-bottom:1px solid var(--line);padding:8px;transform:rotate(90deg)}
+    .scrollcue{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="rail" id="rail"></div>
+
+<div class="wrap">
+
+  <header>
+    <div class="kicker">An analogy, pushed until it makes a claim</div>
+    <h1>Stable, because it <em>keeps adapting</em>.</h1>
+    <div class="sub">A tertiary lymphoid structure as a model for multi-turn attractor formation in language models.</div>
+    <div class="byline">A working hypothesis · built from <b>TNFSF receptor signaling</b> · mapped onto <b>representational dynamics</b><br>The green claims are defended from the biology. The amber one is the experiment.</div>
+    <div class="scrollcue"><span class="dot"></span> scroll to follow the argument</div>
+  </header>
+
+  <!-- 1 — THE SEED -->
+  <section>
+    <div class="step">
+      <div class="secnum">01 — The seed</div>
+      <h2>It starts with one receptor that <em>refuses to mean one thing</em>.</h2>
+      <p class="lead">HVEM does not have a fixed function. Engaged by LIGHT it activates; engaged by BTLA or CD160 it inhibits. The same receptor, opposite outcomes — the meaning lives in the <em>partner</em> and the <em>context</em>, never in the node alone.</p>
+      <p>That is the property worth borrowing. A feature inside a transformer is similarly <strong>polysemantic</strong>: it has no single meaning, and what it does depends on what else is active and on what is reading from it. So the first correspondence is not decorative. One receptor, context-dependent output, maps cleanly onto one feature, context-dependent effect. This is the foundation everything else is built on — and it is the part that holds hardest.</p>
+      <div class="map">
+        <div class="map-row">
+          <div class="map-cell bioc">
+            <div class="map-label">Immunology</div>
+            <div class="map-txt">HVEM · output set by ligand (LIGHT / BTLA / CD160) and local context</div>
+          </div>
+          <div class="map-mid">→</div>
+          <div class="map-cell">
+            <div class="map-label">Transformer</div>
+            <div class="map-txt">Polysemantic feature · effect set by co-active features and downstream readers</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 — THE BIOLOGY -->
+  <section>
+    <div class="step">
+      <div class="secnum">02 — What the structure actually does</div>
+      <h2>A tertiary lymphoid structure is not in the blueprint. It <em>self-organizes</em>.</h2>
+      <p><span class="bio">LTβR</span> is the organizer. Fired on dendritic cells it drives proliferation and activation of CD4 T cells. Fired on stromal and endothelial cells it drives a chemokine program — <span class="term">CCL19/CCL21</span> for the T-zone, <span class="term">CXCL12/CXCL13</span> for the B-zone, plus the vasculature for cells to even enter. Same receptor, three different jobs depending on which cell it speaks through.</p>
+      <p>Those gradients don't just recruit cells — they <strong>sort</strong> them. T and B zones segregate, a germinal-center reaction begins, and the structure <strong>self-sustains as long as antigen and inflammation persist</strong>. A whole functioning lymphoid organ, assembled from local signaling rules, in tissue that was never supposed to have one.</p>
+      <div class="pull">The trigger is transient. The structure outlasts it. That gap is the entire reason the analogy is worth drawing.</div>
+    </div>
+  </section>
+
+  <!-- 3 — THE MOVE -->
+  <section>
+    <div class="step">
+      <div class="secnum">03 — The move that makes it work</div>
+      <h2>An attractor doesn't exist in a <em>single pass</em>. There's no basin to fall into yet.</h2>
+      <p>Here is the correction that sharpened everything. It is tempting to map the TLS onto a transformer's single forward pass — prompt in, settled output out. But a single pass has no time axis. It is a transient signal, not a trajectory. There is no surface for the system to settle into, because <strong>the surface is carved by the accumulation of turns.</strong></p>
+      <p>So the single-pass attractor isn't a weak node to be flagged. It is a category error to be deleted. The attractor is definitionally a <strong>multi-turn</strong> object: the basin is built by sustained contact, the same way a germinal center is built by sustained antigen — neither pre-exists its own history.</p>
+
+      <div class="ghost">
+        <span class="badge">cut</span>
+        <span class="node-claim">Single forward pass → attractor basin</span>
+        <div class="ghost-note">Removed, not flagged. No time axis means no trajectory means no basin. The structure only exists in the regime where it can exist — and the absence is the point.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 — GREEN CORE -->
+  <section>
+    <div class="step">
+      <div class="secnum">04 — The core claim</div>
+      <h2>Sustained contact builds a structure whose stability comes from <em>responsiveness</em>, not from a fixed input.</h2>
+      <p>A germinal center does not persist because the antigen holds still. It persists because the structure has become self-maintaining and keeps adapting — to affinity maturation, to neoantigens, to whatever the local environment turns into. <strong>The stability lives in the structure, not in the stimulus.</strong></p>
+      <p>Said of a conversation: a multi-turn attractor is not held together by the topic staying fixed. It is held together by the interaction having developed enough structure to keep responding adaptively, regardless of how the content shifts. The container is what's stable. The container adapts. And the local environment is allowed to change underneath it.</p>
+
+      <div class="node green" data-node>
+        <div class="node-bar"></div>
+        <div class="node-head">
+          <span class="badge">Defensible</span>
+          <span class="node-claim">A self-maintaining structure can be stable <em>through</em> continued adaptation — not stable <em>as</em> stuckness.</span>
+          <span class="node-toggle">+</span>
+        </div>
+        <div class="node-body"><div class="node-body-inner">
+          <div class="sublabel">Why this holds from the biology</div>
+          <p>A rut is stable because it stops adapting. A germinal center is stable because it never does. These are opposite kinds of stability that share a word. The healthy multi-turn attractor is the germinal-center kind: it maintains its mode precisely by continuing to respond — the opposite of collapse.</p>
+          <div class="sublabel">Why it matters for interpretability</div>
+          <p>It reframes "attractor" from a degeneration story (the model falls into a rut) into a competence story (the interaction sustains an adaptive structure). Those predict different things and are distinguishable in practice — which makes this a claim, not a metaphor.</p>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 — SELF SELECTION -->
+  <section>
+    <div class="step">
+      <div class="secnum">05 — Where selection comes from</div>
+      <h2>Nothing external grades the response. The <em>competition is the grading</em>.</h2>
+      <p>The obvious worry: if the structure refines over time, what does the refining? In the germinal center, the answer is that nothing outside does. Same antigen yields a spread of affinity variants; the high-affinity clones win the competition for antigen and T-cell help; the low-affinity ones don't get the survival signal and fall away. <strong>It self-selects.</strong> Duration <em>is</em> refinement — more turns, more rounds of selection, the same way more time in the GC means more affinity maturation.</p>
+      <p>But the single-axis version of that story is a trap. The same antigen doesn't only produce a better antibody — it produces <em>many kinds</em> of response: class switching, plasma cells, and crucially <strong>memory B cells</strong> that survive precisely because they are <em>not</em> the current winner. Memory is the structure hedging against the antigen that hasn't arrived yet.</p>
+      <div class="pull">Pure affinity-maximization would destroy the diversity the structure needs to survive its own future.</div>
+      <p>So the deep claim is not "the best idea wins." It is that a healthy adaptive structure <strong>selects for fitness while deliberately preserving diversity it doesn't currently need</strong>. In a conversation: holding threads that aren't salient right now but might become the thing the whole exchange turns on at turn forty. That is a richer claim — and a more accurate one — than basin-collapse-to-a-winner.</p>
+
+      <div class="node green" data-node>
+        <div class="node-bar"></div>
+        <div class="node-head">
+          <span class="badge">Defensible</span>
+          <span class="node-claim">Selection is endogenous, and a healthy structure preserves diversity rather than collapsing to the current winner.</span>
+          <span class="node-toggle">+</span>
+        </div>
+        <div class="node-body"><div class="node-body-inner">
+          <div class="sublabel">The mechanism, stated plainly</div>
+          <p>No external judge. Variants compete for a limited resource; fit ones expand, unfit ones lose the survival signal. The multi-turn process itself is the selective environment — which is why this can't happen in a two-turn exchange. There isn't enough sustained contact to select within.</p>
+          <div class="sublabel">The guardrail against the rut reading</div>
+          <p>Memory B cells are the proof that the system does not maximize on a single axis. Diversity preservation is what lets the structure answer a question it hasn't been asked yet. A conversational attractor that collapsed to one idea would lose exactly this.</p>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 — THE EDGE -->
+  <section>
+    <div class="step">
+      <div class="secnum">06 — The edge, at three scales</div>
+      <span class="edge-marker">The amber node — one edge, cutting at three scales</span>
+      <h2>There is exactly one open question. It only <em>looks</em> like three.</h2>
+      <p>It is tempting to file the unknowns as a list — what is affinity, what is selection, what makes a representation collapse. But they are not parallel. They are a single thing seen at three depths: a <strong>quantity</strong>, the <strong>operation</strong> that runs on it, and the <strong>outcome</strong> that operation produces. The same edge, resolved at three scales — which is sharper than three separate edges, because it has structure.</p>
+      <p>In the germinal center, affinity is a physical measurable — binding strength, real on/off rates. When the analogy says an idea "has enough affinity to land in the basin," affinity has quietly become a metaphor for something on the model side that <strong>has not been defined or measured</strong>. That single undefined quantity is the root. Everything else is what it does.</p>
+
+      <div class="node amber open" data-node>
+        <div class="node-bar"></div>
+        <div class="node-head">
+          <span class="badge">Open · scale 1 / 3</span>
+          <span class="node-claim">The quantity. "Affinity" needs a computational definition — here are the candidates.</span>
+          <span class="node-toggle">+</span>
+        </div>
+        <div class="node-body"><div class="node-body-inner">
+          <div class="sublabel">Candidate operationalizations</div>
+          <div class="cand"><b>semantic-retrieval distance</b><br>Affinity as proximity in embedding space — how close a concept's vector sits to the current context. Concrete and measurable, but possibly the wrong level: retrieval matches stored text, not a concept's grip on the live representational state.</div>
+          <div class="cand"><b>representational overlap / superposition</b><br>Affinity as the degree to which a concept is carried by the directions currently active — leaning on superposition and polysemanticity. Closer to the internal-dynamics sense, harder to measure, exactly where interpretability tooling would point.</div>
+          <div class="cand"><b>something third</b><br>The honest possibility: neither, and the real quantity is one this framing hasn't named yet.</div>
+          <div class="sublabel">Intuition</div>
+          <p>One referent — <em>carbonated sweet drink</em> — is never stored as one token. It lives as a spread of forms (soda, pop, coke-as-generic) and context decides which expresses. That spread is the quantity we're trying to name.</p>
+        </div></div>
+      </div>
+
+      <div class="node amber" data-node>
+        <div class="node-bar"></div>
+        <div class="node-head">
+          <span class="badge">Open · scale 2 / 3</span>
+          <span class="node-claim">The operation. "Selection" is at least two mechanisms sharing one outcome.</span>
+          <span class="node-toggle">+</span>
+        </div>
+        <div class="node-body"><div class="node-body-inner">
+          <div class="sublabel">Two operations, one ending</div>
+          <p><b>Frequency selection</b> — which form is ambient here (dialect picks <em>soda</em> over <em>pop</em>). And <b>competitive survival</b> — which variant outlasts the others under pressure (affinity picks a B-cell clone; the rest lose the survival signal). Both terminate in "one thing wins," which is why a single word feels honest. But the process getting there is different, and collapsing them would hide that.</p>
+          <div class="sublabel">Why it stays amber</div>
+          <p>Whether these are one abstract operation or two genuinely different things is unresolved — and pretending otherwise would be the exact move this whole map refuses.</p>
+        </div></div>
+      </div>
+
+      <div class="node amber" data-node>
+        <div class="node-bar"></div>
+        <div class="node-head">
+          <span class="badge">Open · scale 3 / 3</span>
+          <span class="node-claim">The outcome. Context sometimes collapses the superposition — and sometimes sustains it.</span>
+          <span class="node-toggle">+</span>
+        </div>
+        <div class="node-body"><div class="node-body-inner">
+          <div class="sublabel">Collapse vs. sustain</div>
+          <p>Saying "soda" actively suppresses "pop" — expression forces a choice, one reading at the cost of the others. But to find someone <em>annoying and endearing, dense and brilliant</em> is to hold both at once: no winner, no suppression, genuine simultaneity. Like the moon orbiting Earth and Sun — it never has to stop doing one to do the other.</p>
+          <p>So the deepest question: <strong>what determines whether a superposition collapses to a single expressed reading or stays held?</strong> When does context disambiguate, and when does it let the mixture ride?</p>
+          <div class="sublabel">Who decides — all three</div>
+          <p>Resolved by transformer-internals expertise, not immunology. The biology specifies what each scale must <em>do</em> — confer survival, support competition, permit or suppress coexistence. It cannot say what any of them <em>are</em> inside the model. That handoff is not the argument's gap. It is the argument's most precise point.</p>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 — THE PROGRAM -->
+  <section>
+    <div class="step">
+      <div class="program">
+        <div class="secnum">07 — What this becomes</div>
+        <h2>An analogy that names its own edge is a <em>research program</em>.</h2>
+        <p>The HVEM correspondence was a seed. Pushed through the TLS — multi-turn framing, endogenous self-selection, diversity preservation, and one edge that resolves at three scales — it stops being a clever mapping and becomes a set of things you could actually go and test:</p>
+        <ol class="qlist">
+          <li>Does a sustained interaction maintain a stable representational structure while its token-level content demonstrably shifts — a stable container with evolving contents?</li>
+          <li>Does a healthy multi-turn attractor preserve diversity it isn't currently using — the memory-B-cell move — and does losing that diversity look like the failure mode we'd call a conversational rut?</li>
+          <li>Which operationalization of "affinity" — retrieval distance, representational overlap, or something unnamed — actually predicts which ideas persist in the basin? <em>(the quantity)</em></li>
+          <li>What determines whether context collapses a superposition to one expressed reading or sustains the mixture — soda versus the moon? <em>(the outcome)</em></li>
+        </ol>
+        <p style="margin-bottom:0;color:var(--paper)">None of these require already knowing the answer. They require a structural intuition pushed to a sharp claim, and an honest map of where it needs someone else's expertise to be settled. That map is the deliverable.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="step">
+      <div class="foot-note">
+        <b>On method.</b> The green nodes are claims defended from ten years of TNFSF receptor biology. The amber node is drawn with the same precision as the green ones — not vague hedging, but a bounded question with named candidate answers and an identified path to resolution.<br><br>
+        The single-pass attractor node was cut, not flagged, because a cleaner definition dissolved it. That is what the edges are for.<br><br>
+        <b>TNFSF → representational dynamics.</b> A working hypothesis, offered as an invitation to test it.
+      </div>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  // progress rail
+  const rail=document.getElementById('rail');
+  const onScroll=()=>{
+    const h=document.documentElement;
+    const max=h.scrollHeight-h.clientHeight;
+    rail.style.width=(max>0?(h.scrollTop/max)*100:0)+'%';
+  };
+  document.addEventListener('scroll',onScroll,{passive:true});onScroll();
+
+  // reveal on scroll
+  const io=new IntersectionObserver((es)=>{
+    es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}});
+  },{threshold:.18,rootMargin:'0px 0px -8% 0px'});
+  document.querySelectorAll('.step').forEach(s=>io.observe(s));
+
+  // expandable confidence nodes
+  document.querySelectorAll('[data-node]').forEach(node=>{
+    const body=node.querySelector('.node-body');
+    const setOpen=(open)=>{
+      node.classList.toggle('open',open);
+      body.style.maxHeight=open?body.scrollHeight+'px':'0px';
+    };
+    if(node.classList.contains('open')) setOpen(true);
+    node.addEventListener('click',()=>setOpen(!node.classList.contains('open')));
+  });
+  // recalc open heights on resize
+  window.addEventListener('resize',()=>{
+    document.querySelectorAll('[data-node].open .node-body').forEach(b=>{b.style.maxHeight=b.scrollHeight+'px';});
+  });
+</script>
+</body>
+</html>

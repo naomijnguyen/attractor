@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Naomi J. Nguyen — Systems thinking, from immune cells to model internals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,400&family=Spline+Sans+Mono:wght@400;500;600&family=Spline+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#f6f4ee;
+    --paper-2:#efece3;
+    --ink:#1c1b18;
+    --ink-soft:#46443d;
+    --ink-faint:#6f6c62;
+    --line:#d9d4c6;
+    --accent:#7a2e2e;        /* dried-blood / stain red — the biological accent */
+    --accent-soft:#b5685f;
+    --teal:#2e5b56;          /* assay green-teal */
+    --rule:#c7c1b1;
+    --serif:'Newsreader',Georgia,serif;
+    --sans:'Spline Sans',system-ui,sans-serif;
+    --mono:'Spline Sans Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--serif);
+    font-size:19px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  /* subtle paper grain */
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.035;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .wrap{max-width:980px;margin:0 auto;padding:0 28px;position:relative;z-index:2}
+  .mono{font-family:var(--mono)}
+  .sans{font-family:var(--sans)}
+
+  /* ---------- top bar ---------- */
+  header.bar{
+    position:sticky;top:0;z-index:50;
+    background:rgba(246,244,238,.82);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  .bar-inner{max-width:980px;margin:0 auto;padding:14px 28px;display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+  .bar .name{font-family:var(--sans);font-weight:600;letter-spacing:.01em;font-size:16px}
+  .bar nav{display:flex;gap:22px;font-family:var(--mono);font-size:12.5px;letter-spacing:.04em}
+  .bar nav a{color:var(--ink-faint);text-decoration:none;text-transform:uppercase;transition:color .2s}
+  .bar nav a:hover{color:var(--accent)}
+  @media(max-width:640px){.bar nav{display:none}}
+
+  /* ---------- hero ---------- */
+  .hero{padding:92px 0 64px;border-bottom:1px solid var(--line)}
+  .kicker{font-family:var(--mono);font-size:12.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);margin-bottom:26px}
+  .hero h1{
+    font-family:var(--serif);font-weight:400;
+    font-size:clamp(34px,5.6vw,62px);line-height:1.08;letter-spacing:-.01em;
+    max-width:18ch;margin-bottom:30px;
+  }
+  .hero h1 em{font-style:italic;color:var(--accent)}
+  .lede{font-size:clamp(18px,2.2vw,22px);color:var(--ink-soft);max-width:60ch;line-height:1.6}
+  .lede strong{font-weight:500;color:var(--ink)}
+  .hero-meta{margin-top:38px;display:flex;flex-wrap:wrap;gap:10px 14px;font-family:var(--mono);font-size:12.5px}
+  .pill{border:1px solid var(--rule);border-radius:100px;padding:6px 14px;color:var(--ink-soft);background:var(--paper-2)}
+  .pill b{color:var(--accent);font-weight:600}
+
+  /* ---------- narrative essay ---------- */
+  section{padding:66px 0;border-bottom:1px solid var(--line)}
+  .sec-label{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:30px;display:flex;align-items:center;gap:14px}
+  .sec-label::after{content:"";flex:1;height:1px;background:var(--rule)}
+  .essay{max-width:64ch}
+  .essay p{margin-bottom:22px;font-size:20px}
+  .essay p.big{font-size:clamp(22px,2.8vw,28px);line-height:1.45;color:var(--ink)}
+  .essay .drop::first-letter{
+    font-size:3.6em;line-height:.72;float:left;padding:8px 12px 0 0;color:var(--accent);font-weight:500;
+  }
+  .essay em{color:var(--accent-soft);font-style:italic}
+  .pull{
+    border-left:2px solid var(--accent);padding:6px 0 6px 24px;margin:34px 0;
+    font-style:italic;font-size:22px;color:var(--ink-soft);line-height:1.5;
+  }
+
+  /* ---------- how I work — trait cards ---------- */
+  .traits{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);margin-top:8px}
+  .trait{background:var(--paper);padding:26px 24px}
+  .trait .n{font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:.1em;margin-bottom:12px}
+  .trait h4{font-family:var(--sans);font-weight:600;font-size:17px;margin-bottom:10px;line-height:1.3}
+  .trait p{font-size:16px;line-height:1.55;color:var(--ink-soft);font-family:var(--sans);font-weight:400}
+
+  /* ---------- showcase ---------- */
+  .show{margin-top:14px}
+  .show + .show{margin-top:56px}
+  .show-head{display:flex;align-items:baseline;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:6px}
+  .show-head h3{font-family:var(--serif);font-weight:500;font-size:clamp(24px,3.2vw,32px);letter-spacing:-.01em}
+  .show-tag{font-family:var(--mono);font-size:12px;letter-spacing:.08em;color:var(--teal);text-transform:uppercase;white-space:nowrap}
+  .show-sub{font-family:var(--sans);color:var(--ink-faint);font-size:15px;margin-bottom:20px}
+  .show-body{font-size:18.5px;max-width:66ch}
+  .show-body p{margin-bottom:16px}
+  .show-body strong{font-weight:500;color:var(--accent)}
+  .stack{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+  .chip{font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;border:1px solid var(--rule);background:var(--paper-2);color:var(--ink-soft);padding:5px 11px;border-radius:4px}
+  .honest{
+    margin-top:18px;font-family:var(--sans);font-size:14.5px;color:var(--ink-faint);
+    background:var(--paper-2);border:1px dashed var(--rule);border-radius:8px;padding:14px 18px;line-height:1.55;
+  }
+  .honest b{color:var(--teal);font-weight:600}
+
+  /* embed frame for the live TNF viz */
+  .frame{
+    margin-top:26px;border:1px solid var(--rule);border-radius:12px;overflow:hidden;
+    box-shadow:0 24px 60px -32px rgba(28,27,24,.4);background:#020617;position:relative;
+  }
+  .frame-bar{display:flex;align-items:center;gap:8px;padding:11px 16px;background:#0b1220;border-bottom:1px solid #1e293b}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .frame-bar .t{margin-left:10px;font-family:var(--mono);font-size:12px;color:#7c8aa5}
+  .frame iframe{width:100%;height:760px;border:0;display:block;background:#020617}
+  @media(max-width:640px){.frame iframe{height:980px}}
+
+  /* ---------- close ---------- */
+  .close{padding:78px 0 30px}
+  .close h2{font-family:var(--serif);font-weight:400;font-size:clamp(26px,4vw,40px);line-height:1.2;max-width:20ch;margin-bottom:24px}
+  .close h2 em{color:var(--accent);font-style:italic}
+  .close p{max-width:58ch;color:var(--ink-soft);font-size:19px;margin-bottom:30px}
+  .links{display:flex;flex-wrap:wrap;gap:14px;font-family:var(--mono);font-size:13.5px}
+  .links a{
+    text-decoration:none;color:var(--ink);border:1px solid var(--ink);
+    padding:11px 20px;border-radius:6px;transition:all .2s;letter-spacing:.02em;
+  }
+  .links a:hover{background:var(--ink);color:var(--paper)}
+  .links a.solid{background:var(--accent);border-color:var(--accent);color:#fff}
+  .links a.solid:hover{background:#5e2222}
+  footer{padding:30px 0 70px;font-family:var(--mono);font-size:12px;color:var(--ink-faint)}
+  footer .recon{margin-top:6px}
+
+  /* reveal */
+  .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s ease}
+  .reveal.in{opacity:1;transform:none}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-inner">
+    <span class="name">Naomi J. Nguyen</span>
+    <nav>
+      <a href="#how">How I think</a>
+      <a href="#work">The work</a>
+      <a href="#tnf">TNF→AI</a>
+      <a href="#contact">Contact</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="kicker reveal">Immunologist · systems builder · interpretability</div>
+    <h1 class="reveal">I couldn't stop seeing transformers as <em>immune systems</em> — so I built the comparison until it made predictions.</h1>
+    <p class="lede reveal"><strong>Ten years reverse-engineering how signals route through immune systems.</strong> Now I ask the same question of language models: which signal wins, what fires downstream, and how local structure produces behavior you can trust. I build the tools, run the experiments, and connect the people doing the work.</p>
+    <div class="hero-meta reveal">
+      <span class="pill"><b>10+ yrs</b> mechanistic immunology</span>
+      <span class="pill">led <b>4 scientists</b> + 2 interns, BSL-3</span>
+      <span class="pill">shipped <b>distributed systems</b> on Cloudflare</span>
+      <span class="pill"><b>4</b> peer-reviewed publications</span>
+    </div>
+  </div>
+
+  <!-- HOW I THINK (narrative essay) -->
+  <section id="how">
+    <div class="sec-label">How I think</div>
+    <div class="essay">
+      <p class="big drop reveal">I'm the person who hears "you know what would be cool…" and, two weeks later, hands you a working version of it — plus three research questions nobody asked for but everybody needed.</p>
+
+      <p class="reveal">For a decade I did bench immunology: tumor, autoimmune, and infectious-disease models, tracing checkpoint receptor networks one signal at a time. The work taught me a specific way of seeing — that complex behavior is rarely about any single part, and almost always about <em>which signal wins the competition</em> and what assembles locally once it does. You don't understand an immune response by reading a parts list. You understand it by watching what routes where, under pressure.</p>
+
+      <p class="reveal">When I started working seriously with language models, I couldn't un-see it. The competition between a trained refusal and a genuine response looked like receptor competition. Stable behavior over a long conversation looked like a tertiary lymphoid structure — local order forming <em>de novo</em> out of sustained signaling, without retraining the whole organism. Most people would file that under "fun metaphor." I'm constitutionally incapable of leaving it there. I pulled the thread until it stopped being an analogy and started being a framework with testable predictions — including one about where you'd expect to find these structures in activation space.</p>
+
+      <div class="pull reveal">I over-engineer, and I know it, and it's load-bearing: the thing I build to answer one question keeps becoming the infrastructure for the next five.</div>
+
+      <p class="reveal">I red-team by reflex. Not as an adversarial exercise — it happens in the middle of what looks like a friendly debate, because pulling at a claim until it either holds or breaks is just how I check whether something is real. It turns out that's a useful way to stress-test a model: you find the edges of its reasoning under normal-looking conditions, not obviously hostile ones. I kept noticing model behaviors this way before I had a name for what I was doing.</p>
+
+      <p class="reveal">What I want next is a seat next to the people deciding what's worth building — a chief-of-staff or research-management role where the job <em>is</em> holding the whole picture, following the research closely enough to have my own questions, and turning the good "wouldn't it be cool if" into something shipped. The interpretability thinking isn't a side hobby I'd set down. It's the reason I'd be useful in the room.</p>
+    </div>
+  </section>
+
+  <!-- HOW I WORK — trait cards -->
+  <section id="work-style">
+    <div class="sec-label">The shape of it</div>
+    <div class="traits">
+      <div class="trait reveal"><div class="n">01</div><h4>Translation across functions</h4><p>Routinely the person who makes biology legible to clinical, safety legible to leadership, and the technical thing legible to whoever has to decide.</p></div>
+      <div class="trait reveal"><div class="n">02</div><h4>Execution under ambiguity</h4><p>Give me a loosely-scoped problem and a couple of weeks; you get back a defined goal, a path, and usually a deployed artifact.</p></div>
+      <div class="trait reveal"><div class="n">03</div><h4>Over-engineering as infrastructure</h4><p>The tool I build to answer one question becomes the thing the next five questions run on. On purpose.</p></div>
+      <div class="trait reveal"><div class="n">04</div><h4>Red-teaming as a feature</h4><p>I find the edges of a system's reasoning by genuinely engaging with it until something gives. It reads as debate; it works as a probe.</p></div>
+    </div>
+  </section>
+
+  <!-- THE WORK -->
+  <section id="work">
+    <div class="sec-label">The work · proof, not vibes</div>
+
+    <!-- Claude Code / the hard one -->
+    <div class="show reveal">
+      <div class="show-head">
+        <h3>Claude Code, end to end</h3>
+        <span class="show-tag">engineering · the hard one</span>
+      </div>
+      <div class="show-sub">The hardest thing I've built — and the one that taught me what "ships" actually means.</div>
+      <div class="show-body">
+        <p>I took a coding agent from a local experiment to something that <strong>commits and deploys</strong> — a real pipeline, not a notebook demo. This is the project where I stopped describing engineering in vibes and started understanding the machinery: what a deploy actually is, why "it works on my machine" isn't done, where the seams are.</p>
+        <p>It was hard in the way that matters — the kind of hard that rewires how you think about the rest of your work. Every other project on this page is sharper because of what this one cost me.</p>
+        <div class="stack">
+          <span class="chip">agentic coding</span><span class="chip">CI / deploy</span><span class="chip">git</span><span class="chip">command line</span>
+        </div>
+        <div class="honest"><b>Honest scope:</b> placeholder for the live repo link once public — github.com/njarm23. I'll point this at the actual commit history so the claim is verifiable, not asserted.</div>
+      </div>
+    </div>
+
+    <!-- Mythos / Claude-chat -->
+    <div class="show reveal">
+      <div class="show-head">
+        <h3>Mythos — a platform to study how models behave</h3>
+        <span class="show-tag">full-stack · distributed</span>
+      </div>
+      <div class="show-sub">A production chat application I architected and deployed on Cloudflare's edge — specified largely in natural language, built in about two weeks.</div>
+      <div class="show-body">
+        <p>Mythos runs on a real distributed stack: <strong>D1</strong> for persistence, <strong>R2</strong> for storage, <strong>Vectorize</strong> for retrieval, <strong>Workers Queue</strong> for async work, and a <strong>Durable Object</strong> coordinating live state. I didn't set out to prove I could build infrastructure — I set out to have a place to watch model behavior closely, and the infrastructure was what that required.</p>
+        <p>Two things I'm proud of because nobody handed them to me: I caught a <strong>CORS configuration as a safety boundary</strong> the original design hadn't accounted for, and I designed a <strong>cryptographic token scheme</strong> so the API key was never exposed client-side. Both came from the same instinct — asking "where does this leak?" before anyone made me.</p>
+        <div class="stack">
+          <span class="chip">Cloudflare Workers</span><span class="chip">D1</span><span class="chip">R2</span><span class="chip">Vectorize</span><span class="chip">Durable Objects</span><span class="chip">Workers Queue</span>
+        </div>
+        <div class="honest"><b>Honest scope:</b> I'm describing the architecture and the two security decisions, which I can defend in detail. I'm deliberately <b>not</b> quoting a user/traffic number until I can name exactly what it measures.</div>
+      </div>
+    </div>
+
+    <!-- Multi-model Discord app -->
+    <div class="show reveal">
+      <div class="show-head">
+        <h3>The multi-model router nobody asked for</h3>
+        <span class="show-tag">product · the weird one</span>
+      </div>
+      <div class="show-sub">A Discord app routing across multiple models and platforms. People were skeptical. I built it anyway. It worked.</div>
+      <div class="show-body">
+        <p>This is the "you know what would be cool…" project that becomes a real tool. A multi-model, multi-platform router that let me put models side by side and watch how they diverge on the same input — which turned into one of my better informal sources of interpretability intuition. The skepticism was fair; the thing still shipped and earned its place.</p>
+        <div class="stack">
+          <span class="chip">multi-model routing</span><span class="chip">Discord API</span><span class="chip">comparative eval</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Research proposals -->
+    <div class="show reveal">
+      <div class="show-head">
+        <h3>Three research directions, ready to run</h3>
+        <span class="show-tag">research · interpretability</span>
+      </div>
+      <div class="show-sub">Grounded in mechanistic biology and signal detection — falsifiable, not hand-wavy.</div>
+      <div class="show-body">
+        <p><strong>Context architecture &amp; token efficiency.</strong> Whether structured narrative context — carrying the <em>why</em> of the person and the <em>how</em> of the model — delivers behavior more efficiently than flat memory or a raw context window. The bet: a few hundred well-shaped tokens beat a million flat ones, with measurable drift resistance.</p>
+        <p><strong>Performed compliance vs. honest reasoning.</strong> Whether competing system-prompt instructions train models toward <em>performed</em> compliance rather than honest reasoning — and whether suppressing a signal makes the model fixate on it, the way "don't think about a white bear" backfires. Elevated refusals might mean the guardrail is working, or just that it's salient. Those are different, and you can't tell from outside without looking in.</p>
+        <p><strong>Idiosyncratic input as identity signal.</strong> Whether stylistic fingerprints — fragment length, punctuation habits — act as implicit identity signals that shift model output independent of explicit context.</p>
+        <p>The method underneath all three borrows from flow cytometry: <strong>FMO-inspired token occlusion</strong>, replacing tokens one at a time to measure each one's contribution — the same control logic I used at the bench, pointed at a model.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TNF LIVE EMBED -->
+  <section id="tnf">
+    <div class="sec-label">The idea I love · live</div>
+    <div class="essay" style="margin-bottom:8px">
+      <p class="reveal">This is the framework I couldn't leave alone. Each node is a real TNF-superfamily receptor with a real binding competition; each maps to a function in a transformer. Click a node to see what it binds — and what it means on the model side. The claim it builds toward: <em>local self-organization (tertiary lymphoid structures, driven by LTβR) is the biological version of a stable behavioral attractor</em>, with a predicted signature you could go looking for in activation space.</p>
+    </div>
+    <div class="frame reveal">
+      <div class="frame-bar">
+        <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+        <span class="t">tnfsf-receptor-mapping.jsx — interactive</span>
+      </div>
+      <iframe id="tnf-frame" title="TNFSF receptor to AI architecture mapping"></iframe>
+    </div>
+  </section>
+
+  <!-- CLOSE -->
+  <div class="close" id="contact">
+    <h2 class="reveal">I want to be in the room where the <em>weird questions</em> get decided.</h2>
+    <p class="reveal">Chief of staff / research management in a research org — where holding the whole picture, following the science, and turning "wouldn't it be cool if" into shipped work is the actual job. If that's a seat you're filling, let's talk.</p>
+    <div class="links reveal">
+      <a class="solid" href="mailto:Naomijnguyen@gmail.com">Email me</a>
+      <a href="https://orcid.org/0000-0001-8295-6767" target="_blank" rel="noopener">ORCID ↗</a>
+      <a href="https://github.com/njarm23" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </div>
+
+  <footer>
+    <div>© Naomi J. Nguyen — built to be read, not skimmed.</div>
+    <div class="recon">Publications appear under <b>Nguyen&nbsp;J.</b> · Verifiable record at ORCID 0000-0001-8295-6767.</div>
+  </footer>
+
+</div>
+
+<script>
+  /* scroll reveal */
+  const io=new IntersectionObserver((es)=>{es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}})},{threshold:.12});
+  document.querySelectorAll('.reveal').forEach((el,i)=>{el.style.transitionDelay=(Math.min(i,6)*60)+'ms';io.observe(el);});
+
+  /* ---- live TNF visualization injected into the iframe (vanilla port of the React component) ---- */
+  const tnfDoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+    *{margin:0;padding:0;box-sizing:border-box;font-family:'Spline Sans',system-ui,sans-serif}
+    body{background:#020617;color:#fff;padding:28px}
+    .h{font-size:24px;font-weight:300;margin-bottom:6px}
+    .s{color:#94a3b8;font-size:15px;margin-bottom:22px}
+    .toggle{display:flex;gap:8px;margin-bottom:24px}
+    .toggle button{padding:9px 16px;border-radius:9px;border:0;font-size:13px;font-weight:500;cursor:pointer;background:#1e293b;color:#cbd5e1;transition:.2s}
+    .toggle button.on{background:#fff;color:#020617}
+    .grid{display:grid;grid-template-columns:2fr 1fr;gap:22px}
+    @media(max-width:760px){.grid{grid-template-columns:1fr}}
+    .panel{background:#0f172a;border-radius:18px;padding:22px;position:relative}
+    .panel h2{font-size:15px;color:#cbd5e1;font-weight:500;margin-bottom:4px}
+    .panel .hint{font-size:12px;color:#64748b;margin-bottom:10px}
+    .net{position:relative;min-height:440px}
+    .node{position:absolute;transform:translate(-50%,-50%);cursor:pointer;transition:.3s}
+    .node .ball{width:74px;height:74px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;transition:.2s;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+    .node.on .ball{box-shadow:0 0 0 4px rgba(255,255,255,.4);transform:scale(1.1)}
+    svg.lines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+    .info{position:absolute;left:16px;right:16px;bottom:16px;background:#1e293b;border-radius:14px;padding:16px;font-size:13px;line-height:1.5}
+    .info h3{font-size:16px;margin-bottom:6px}
+    .info .lab{color:#64748b}
+    .info .bind{color:#64748b;font-size:12px;margin-top:8px}
+    .cells .row{background:#1e293b;border-radius:10px;padding:11px;margin-bottom:9px}
+    .cells .row .c{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:500}
+    .cells .row .a{font-size:12px;color:#94a3b8;margin-left:20px;margin-top:2px}
+    .dotc{width:11px;height:11px;border-radius:50%}
+    .insight{margin-top:22px;background:linear-gradient(90deg,rgba(16,86,80,.5),#0f172a);border:1px solid rgba(45,91,86,.6);border-radius:18px;padding:24px}
+    .insight h2{color:#5eead4;font-size:18px;font-weight:500;margin-bottom:12px}
+    .insight p{color:#cbd5e1;font-size:15px;line-height:1.6}
+    .insight strong{color:#fff}
+    .tags{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap}
+    .tags div{background:#1e293b;border-radius:9px;padding:7px 13px;font-size:12.5px}
+    .tags .lab{color:#64748b}.tags .v{color:#5eead4;margin-left:6px}
+  </style></head><body>
+    <div class="h">TNFSF Receptor Signaling → AI Architecture</div>
+    <div class="s">A framework mapping immune signal competition to transformer safety &amp; generation dynamics</div>
+    <div class="toggle" id="tg"></div>
+    <div class="grid">
+      <div class="panel">
+        <h2>Receptor Competition Network</h2>
+        <div class="hint">Click a node to see binding relationships</div>
+        <div class="net" id="net"><svg class="lines" id="lines"></svg></div>
+      </div>
+      <div class="panel cells">
+        <h2>Cell → Layer Mappings</h2>
+        <div class="hint">Immune cell types as model components</div>
+        <div id="cells"></div>
+      </div>
+    </div>
+    <div class="insight">
+      <h2>Core Framework Insight</h2>
+      <p><strong>Local self-organization leads to better adaptive response and long-term stability.</strong> In immunology, tertiary lymphoid structures form de novo in response to chronic signaling, enabling local adaptive responses without systemic activation. The parallel hypothesis: structured narrative context creates stable attractors that enable coherent generation and self-correction without global retraining.</p>
+      <div class="tags">
+        <div><span class="lab">Immunology:</span><span class="v">TLS formation via LTβR signaling</span></div>
+        <div><span class="lab">AI:</span><span class="v">Context architecture as synthetic memory</span></div>
+      </div>
+    </div>
+  <script>
+    const receptors={
+      hvem:{name:'HVEM',immunology:'Orchestration receptor — trafficking and recruitment hub',ai:'Response generation & orchestration layer',color:'#8B5CF6',binds:['light','btla','cd160'],x:50,y:18},
+      btla:{name:'BTLA',immunology:'Dampening signal — inhibitory receptor competing for HVEM binding',ai:'Safety layer — self-monitoring when activation runs high',color:'#3B82F6',binds:['hvem'],x:20,y:45},
+      light:{name:'LIGHT',immunology:'Activating ligand — binds HVEM, LTβR, or captured by decoy DcR3',ai:'Activating signal — prompt routed to different pathways',color:'#F59E0B',binds:['hvem','ltbr','dcr3'],x:50,y:55},
+      cd160:{name:'CD160',immunology:'Activating signal for innate NK cells — binds HVEM',ai:'Compliance activation — more adversarial, higher misalignment risk',color:'#EF4444',binds:['hvem'],x:80,y:45},
+      dcr3:{name:'DcR3',immunology:'Decoy receptor — captures LIGHT without signaling',ai:'Noise filter — ambiguous prompts captured as noise',color:'#6B7280',binds:['light'],x:22,y:84},
+      ltbr:{name:'LTβR',immunology:'Lymphotoxin-β receptor — drives tertiary lymphoid structure formation',ai:'Local attractor formation — stable de novo architectures',color:'#10B981',binds:['light'],x:80,y:84}
+    };
+    const cells=[
+      ['Memory B cells','Trained refusals (classifiers)','#3B82F6'],
+      ['NK cells','Model watching model — fast, unsustained refusals','#EF4444'],
+      ['CD4+ T (helpers)','Guardrails, edge-case reasoning','#8B5CF6'],
+      ['CD8+ T (effectors)','Novel generation — the transformer itself','#F59E0B'],
+      ['Dendritic cells','Orchestration — presenting input to experts','#10B981'],
+      ['HEVs (vessels)','Residual stream — normalizes flow','#6366F1'],
+      ['Stromal cells','Context layers, feed-forward, pre-recruiting','#EC4899']
+    ];
+    let active=null, mode='integrated';
+    const net=document.getElementById('net'),lines=document.getElementById('lines');
+    const tg=document.getElementById('tg');
+    [['integrated','Integrated'],['immunology','Immunology'],['ai','AI Architecture']].forEach(([m,l])=>{
+      const b=document.createElement('button');b.textContent=l;b.className=m==='integrated'?'on':'';
+      b.onclick=()=>{mode=m;[...tg.children].forEach(c=>c.classList.remove('on'));b.classList.add('on');render();};tg.appendChild(b);
+    });
+    document.getElementById('cells').innerHTML=cells.map(c=>'<div class="row"><div class="c"><span class="dotc" style="background:'+c[2]+'"></span>'+c[0]+'</div><div class="a">→ '+c[1]+'</div></div>').join('');
+    function connected(id){if(!active)return false;return receptors[active].binds.includes(id)||(receptors[id].binds||[]).includes(active);}
+    function render(){
+      lines.innerHTML='';
+      Object.entries(receptors).forEach(([id,r])=>r.binds.forEach(t=>{const tt=receptors[t];if(!tt)return;
+        const on=active&&(active===id||active===t);
+        const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+        l.setAttribute('x1',r.x+'%');l.setAttribute('y1',r.y+'%');l.setAttribute('x2',tt.x+'%');l.setAttribute('y2',tt.y+'%');
+        l.setAttribute('stroke',on?'#fff':'#334155');l.setAttribute('stroke-width',on?2:1);
+        l.setAttribute('stroke-dasharray',on?'none':'4,4');l.setAttribute('opacity',active?(on?1:.18):.5);lines.appendChild(l);}));
+      net.querySelectorAll('.node,.info').forEach(n=>n.remove());
+      Object.entries(receptors).forEach(([id,r])=>{
+        const op=!active?1:(id===active||connected(id))?1:.25;
+        const d=document.createElement('div');d.className='node'+(active===id?' on':'');d.style.left=r.x+'%';d.style.top=r.y+'%';d.style.opacity=op;
+        d.innerHTML='<div class="ball" style="background:'+r.color+'">'+r.name+'</div>';
+        d.onclick=()=>{active=active===id?null:id;render();};net.appendChild(d);
+      });
+      if(active){const r=receptors[active];const i=document.createElement('div');i.className='info';
+        let h='<h3>'+r.name+'</h3>';
+        if(mode!=='ai')h+='<div><span class="lab">Immunology:</span> '+r.immunology+'</div>';
+        if(mode!=='immunology')h+='<div style="margin-top:4px"><span class="lab">AI mapping:</span> '+r.ai+'</div>';
+        h+='<div class="bind">Binds: '+r.binds.map(b=>receptors[b]?.name).filter(Boolean).join(', ')+'</div>';
+        i.innerHTML=h;net.appendChild(i);}
+    }
+    render();
+  <\/script></body></html>`;
+  const f=document.getElementById('tnf-frame');
+  f.srcdoc = tnfDoc;
+</script>
+</body>
+</html>

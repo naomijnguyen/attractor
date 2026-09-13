@@ -1,0 +1,308 @@
+<title>Signal Competition</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #141821;
+    --panel-2: #1b2130;
+    --ink: #eef1f6;
+    --muted: #9aa3b2;
+    --faint: #5c6470;
+    --line: #2a3140;
+    --activate: #f0a63c;
+    --inhibit: #4b7bec;
+    --decoy: #7a8494;
+    --hub: #a06bd6;
+    --route: #33c07a;
+    --good: #33c07a;
+    --break: #e5624f;
+    --cite: #7fb2ff;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; line-height: 1.55; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 30px 22px 60px; }
+  .eyebrow { color: var(--muted); font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 8px; }
+  h1 { font-size: 1.7rem; font-weight: 600; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); font-size: 1.0rem; max-width: 760px; margin: 0 0 6px; }
+  .scope { display: inline-block; margin: 12px 0 26px; font-size: 0.82rem; color: var(--faint); border: 1px dashed var(--line); border-radius: 8px; padding: 7px 12px; }
+  .scope b { color: var(--muted); }
+
+  .grid { display: grid; grid-template-columns: 1.35fr 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+  .card h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 3px; }
+  .card .hint { color: var(--faint); font-size: 0.8rem; margin: 0 0 12px; }
+
+  svg { width: 100%; height: auto; display: block; }
+  .node circle { cursor: pointer; transition: opacity .25s, stroke-width .2s; }
+  .node text { pointer-events: none; font-size: 12px; font-weight: 700; fill: #0b0d12; }
+  .node text.sub { font-size: 8.5px; font-weight: 600; fill: #0b0d12; opacity: .7; }
+  .edge { transition: opacity .25s, stroke-width .2s; }
+  .edgelabel { font-size: 8px; fill: var(--faint); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 12px 16px; margin-top: 14px; font-size: 0.76rem; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 20px; height: 3px; border-radius: 2px; display: inline-block; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+
+  .detail { min-height: 130px; }
+  .detail .badge { display: inline-block; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; padding: 2px 8px; border-radius: 999px; margin-bottom: 8px; }
+  .b-act { background: rgba(240,166,60,.16); color: var(--activate); }
+  .b-inh { background: rgba(75,123,236,.16); color: var(--inhibit); }
+  .b-dec { background: rgba(122,132,148,.18); color: #aeb7c4; }
+  .b-hub { background: rgba(160,107,214,.18); color: #c49bef; }
+  .b-route { background: rgba(51,192,122,.16); color: var(--route); }
+  .detail h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .detail p { margin: 0 0 9px; font-size: 0.9rem; }
+  .detail .bio { color: var(--ink); }
+  .detail .label { color: var(--faint); font-size: 0.72rem; text-transform: uppercase; letter-spacing: .04em; }
+  .rhyme-tag { font-size: 0.8rem; padding: 8px 10px; border-radius: 8px; background: var(--panel-2); border-left: 3px solid var(--good); color: var(--muted); }
+  .rhyme-tag.none { border-left-color: var(--break); }
+  .rhyme-tag b { color: var(--ink); }
+
+  h2.section { font-size: 1.15rem; font-weight: 600; margin: 40px 0 4px; }
+  .section-sub { color: var(--muted); font-size: 0.9rem; margin: 0 0 18px; }
+
+  .rhymes { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 860px) { .rhymes { grid-template-columns: 1fr; } }
+  .rhyme { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; border-top: 3px solid var(--good); }
+  .rhyme .strength { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--good); margin: 0 0 10px; }
+  .rhyme h3 { margin: 0 0 12px; font-size: 1.05rem; }
+  .col2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .col2 .side { background: var(--panel-2); border-radius: 9px; padding: 11px 12px; }
+  .col2 .side .h { font-size: 0.7rem; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); margin-bottom: 5px; }
+  .col2 .side p { margin: 0; font-size: 0.84rem; color: var(--ink); }
+  .why { font-size: 0.86rem; color: var(--muted); margin: 0 0 10px; }
+  .why b { color: var(--ink); }
+  .caveat { font-size: 0.8rem; color: var(--faint); border-top: 1px solid var(--line); padding-top: 9px; margin-top: 4px; }
+  .cite { font-size: 0.76rem; color: var(--cite); text-decoration: none; }
+  .cite:hover { text-decoration: underline; }
+
+  .breaks { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; border-left: 3px solid var(--break); }
+  .breaks ul { margin: 8px 0 0; padding: 0 0 0 2px; list-style: none; }
+  .breaks li { margin: 0 0 14px; padding-left: 20px; position: relative; font-size: 0.9rem; color: var(--muted); }
+  .breaks li:last-child { margin-bottom: 0; }
+  .breaks li::before { content: "\2715"; position: absolute; left: 0; top: 1px; color: var(--break); font-size: 0.78rem; font-weight: 700; }
+  .breaks li b { color: var(--ink); font-weight: 600; }
+
+  .anchor { margin-top: 22px; background: linear-gradient(180deg, rgba(51,192,122,.08), var(--panel)); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; }
+  .anchor .label { color: var(--route); font-size: 0.72rem; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; font-weight: 700; }
+  .anchor p { margin: 0; font-size: 0.9rem; color: var(--muted); }
+  .anchor p b { color: var(--ink); }
+
+  footer { margin-top: 34px; font-size: 0.8rem; color: var(--faint); border-top: 1px solid var(--line); padding-top: 16px; }
+  footer a { color: var(--cite); text-decoration: none; }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">TNFSF signaling · attention mechanisms</p>
+  <h1>Signal competition as a lens on attention</h1>
+  <p class="lede">The HVEM receptor network resolves competing activating, inhibitory, and decoy inputs into a single output. Softmax attention resolves competing tokens into a single distribution. Two places the <i>dynamics</i> genuinely rhyme — and the places they don't, named on purpose.</p>
+  <div class="scope"><b>Scope:</b> an analogy for thinking, not a claim about transformer internals. Immunology is load-bearing; the ML parallels are hypotheses, labeled as such.</div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>The HVEM competition network</h2>
+      <p class="hint">Click a node. Edges show what binds what; color shows the signal it delivers.</p>
+      <svg viewBox="0 0 460 380" id="net" aria-label="HVEM signaling network">
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,1 L7,4 L0,7" fill="none" stroke="#5c6470" stroke-width="1.2"/>
+          </marker>
+        </defs>
+        <g id="edges"></g>
+        <g id="nodes"></g>
+      </svg>
+      <div class="legend">
+        <span><span class="swatch" style="background:var(--activate)"></span>Activating</span>
+        <span><span class="swatch" style="background:var(--inhibit)"></span>Inhibitory</span>
+        <span><span class="swatch" style="background:var(--decoy)"></span>Decoy / sequestration</span>
+        <span><span class="swatch" style="background:var(--route)"></span>Alternate route</span>
+        <span><span class="dot" style="background:var(--hub)"></span>Integrating hub</span>
+      </div>
+    </div>
+
+    <div class="card detail" id="detail">
+      <span class="badge b-hub">Integrating hub</span>
+      <h3>HVEM (TNFRSF14)</h3>
+      <p class="bio">A single receptor that integrates competing inputs: it is activated by LIGHT and (on NK cells) CD160, and delivers or receives inhibition through BTLA and (on T cells) CD160. The output isn't set by one ligand — it's set by which ligands win access under the conditions present.</p>
+      <div class="rhyme-tag"><b>Why it's the center:</b> a limited hub allocating a shared response among competitors is exactly the shape of a softmax — see the first rhyme below.</div>
+    </div>
+  </div>
+
+  <h2 class="section">Where the dynamics rhyme</h2>
+  <p class="section-sub">Two parallels that hold at the level of mechanism, not just vocabulary.</p>
+
+  <div class="rhymes">
+    <div class="rhyme">
+      <p class="strength">Strong rhyme</p>
+      <h3>Competition for a limited hub ↔ softmax competition</h3>
+      <div class="col2">
+        <div class="side"><div class="h">Immunology</div><p>LIGHT, BTLA, and CD160 compete for a finite pool of HVEM. More of one bound means less access for the others; the cell's response is the resolved balance.</p></div>
+        <div class="side"><div class="h">Transformer</div><p>Each query has a fixed attention budget — softmax forces the weights to sum to 1. Keys compete for that budget; raising one lowers the rest.</p></div>
+      </div>
+      <p class="why"><b>Shared mechanism:</b> allocation of a scarce, shared resource among competitors, where the winners suppress the losers by consuming what's available.</p>
+      <p class="caveat">Boundary: biology isn't normalized to a strict constant sum the way softmax is. The rhyme is "competition under scarcity"; softmax is its exact, sum-to-one form.</p>
+    </div>
+
+    <div class="rhyme">
+      <p class="strength">Strong rhyme · citable</p>
+      <h3>Decoy sequestration (DcR3) ↔ attention sinks</h3>
+      <div class="col2">
+        <div class="side"><div class="h">Immunology</div><p>DcR3 binds LIGHT and absorbs it <i>without</i> transducing a signal — a decoy that drains activating ligand out of the system.</p></div>
+        <div class="side"><div class="h">Transformer</div><p>Because softmax must place its full budget somewhere, models park surplus attention on near-empty tokens (often the first token) that carry it without contributing — an "attention sink."</p></div>
+      </div>
+      <p class="why"><b>Shared mechanism:</b> a surplus-signal absorber that exists <i>because</i> the system must allocate an available quantity somewhere — a sink for what has nowhere useful to go.</p>
+      <p class="caveat">Honest note: whether sinks arise from softmax's sum-to-one constraint or from upstream "massive activations" is debated — which is itself the interesting open question.<br>
+        <a class="cite" href="https://arxiv.org/abs/2309.17453" target="_blank" rel="noopener">Xiao et al. 2023, StreamingLLM ↗</a> &nbsp;·&nbsp;
+        <a class="cite" href="https://arxiv.org/abs/2402.17762" target="_blank" rel="noopener">Sun et al. 2024, Massive Activations ↗</a></p>
+    </div>
+  </div>
+
+  <h2 class="section">Where it breaks</h2>
+  <p class="section-sub">The parallels above earn their keep by having edges. These are the edges.</p>
+  <div class="breaks">
+    <ul>
+      <li><b>Active inhibition has no clean counterpart.</b> BTLA and PD-1 deliver a real, driven inhibitory signal. In vanilla attention, a low weight is the <i>absence</i> of signal, not a delivered suppression — softmax can't actively inhibit the way a coinhibitory receptor does. Don't map BTLA onto masking.</li>
+      <li><b>"Receptor = named component" is a category error.</b> The honest rhymes live in network <i>dynamics</i> (competition, sequestration), not in one-to-one part labels. That's why this version drops the receptor→layer table the earlier draft used.</li>
+      <li><b>Context-dependent signing (CD160) has no simple analog.</b> The same ligand is activating on NK cells and inhibitory on T cells. There's no vanilla attention primitive whose sign flips with cell state.</li>
+    </ul>
+  </div>
+
+  <div class="anchor">
+    <div class="label">Experimental anchor</div>
+    <p><b>LTβR is the one node here with wet-lab grounding behind it.</b> LIGHT can be routed to LTβR instead of HVEM, and LTβR agonism drives tertiary lymphoid structure formation — a project I worked on directly. The tempting further leap (TLS ↔ "attractor basins" in latent space) stays explicitly speculative: a forward pass has no literal attractor dynamics. It's flagged as a hypothesis, not folded in as a result.</p>
+  </div>
+
+  <footer>
+    Immunology: the HVEM/LIGHT/BTLA/CD160/DcR3/LTβR network (TNFSF/TNFRSF signaling). ML parallels are analogies for reasoning about attention, not established equivalences. Sources:
+    <a href="https://arxiv.org/abs/2309.17453" target="_blank" rel="noopener">StreamingLLM (Xiao et al. 2023)</a>,
+    <a href="https://arxiv.org/abs/2402.17762" target="_blank" rel="noopener">Massive Activations (Sun et al. 2024)</a>.
+  </footer>
+</div>
+
+<script>
+(function () {
+  var nodes = {
+    hvem:  { name: "HVEM",  sub: "TNFRSF14", x: 230, y: 150, r: 40, cls: "hub",
+      badge: "Integrating hub", blabel: "b-hub",
+      bio: "A single receptor that integrates competing inputs: activated by LIGHT and (on NK cells) CD160, and delivering or receiving inhibition through BTLA and (on T cells) CD160. The output is set by which ligands win access under the conditions present.",
+      rhyme: { ok: true, text: "<b>Why it's the center:</b> a limited hub allocating a shared response among competitors is the shape of a softmax." } },
+    light: { name: "LIGHT", sub: "TNFSF14", x: 90, y: 60, r: 34, cls: "activate",
+      badge: "Activating ligand", blabel: "b-act",
+      bio: "The activating ligand. Binds HVEM, but can also be routed to LTβR or captured by the DcR3 decoy — so its effect depends on where it ends up, not just how much is present.",
+      rhyme: { ok: true, text: "<b>Rhymes:</b> an input whose effect depends on routing — the same signal, different destination, different outcome." } },
+    btla:  { name: "BTLA",  sub: "CD272", x: 90, y: 250, r: 32, cls: "inhibit",
+      badge: "Inhibitory receptor", blabel: "b-inh",
+      bio: "Delivers a coinhibitory signal through HVEM (the interaction is bidirectional). Competes with activating ligands for the hub, biasing the balance toward restraint.",
+      rhyme: { ok: false, text: "<b>Where it breaks:</b> active, driven inhibition has no clean vanilla-attention counterpart — a low attention weight is absence of signal, not delivered suppression." } },
+    cd160: { name: "CD160", sub: "", x: 370, y: 250, r: 30, cls: "inhibit",
+      badge: "Context-dependent", blabel: "b-inh",
+      bio: "Binds HVEM with a sign that depends on the cell: activating on NK cells, inhibitory on T cells. Same molecule, opposite output.",
+      rhyme: { ok: false, text: "<b>Where it breaks:</b> no vanilla attention primitive flips its sign with cell state." } },
+    dcr3:  { name: "DcR3",  sub: "TNFRSF6B", x: 90, y: 150, r: 30, cls: "decoy",
+      badge: "Decoy receptor", blabel: "b-dec",
+      bio: "Binds LIGHT and absorbs it without transducing any signal — a decoy that drains activating ligand out of the system.",
+      rhyme: { ok: true, text: "<b>Strong rhyme:</b> attention sinks — softmax must place its full budget somewhere, so surplus attention is parked on near-empty tokens that carry it without contributing." } },
+    ltbr:  { name: "LTβR", sub: "", x: 370, y: 60, r: 30, cls: "route",
+      badge: "Alternate route", blabel: "b-route",
+      bio: "An alternate receptor for LIGHT. Agonism drives tertiary lymphoid structure (TLS) formation — de novo organized immune tissue. (Direct wet-lab project.)",
+      rhyme: { ok: true, text: "<b>Speculative:</b> TLS ↔ 'attractor basins' is a hypothesis only — a forward pass has no literal attractor dynamics. Kept labeled, not folded in." } }
+  };
+
+  var edges = [
+    { a: "light", b: "hvem", type: "activate", label: "activates" },
+    { a: "light", b: "ltbr", type: "route",    label: "routes to" },
+    { a: "light", b: "dcr3", type: "decoy",    label: "sequestered" },
+    { a: "btla",  b: "hvem", type: "inhibit",  label: "inhibits" },
+    { a: "cd160", b: "hvem", type: "inhibit",  label: "context" }
+  ];
+
+  var color = {
+    activate: getVar("--activate"), inhibit: getVar("--inhibit"),
+    decoy: getVar("--decoy"), route: getVar("--route"), hub: getVar("--hub")
+  };
+  function getVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+  var edgesG = document.getElementById("edges");
+  var nodesG = document.getElementById("nodes");
+  var active = null;
+
+  edges.forEach(function (e, i) {
+    var A = nodes[e.a], B = nodes[e.b];
+    var line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    line.setAttribute("x1", A.x); line.setAttribute("y1", A.y);
+    line.setAttribute("x2", B.x); line.setAttribute("y2", B.y);
+    line.setAttribute("stroke", color[e.type]);
+    line.setAttribute("stroke-width", "2.4");
+    line.setAttribute("opacity", "0.55");
+    line.setAttribute("marker-end", "url(#arrow)");
+    line.setAttribute("class", "edge");
+    line.dataset.a = e.a; line.dataset.b = e.b;
+    edgesG.appendChild(line);
+  });
+
+  Object.keys(nodes).forEach(function (id) {
+    var n = nodes[id];
+    var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.setAttribute("class", "node");
+    var c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("cx", n.x); c.setAttribute("cy", n.y); c.setAttribute("r", n.r);
+    c.setAttribute("fill", color[n.cls]);
+    c.setAttribute("stroke", "#0b0d12"); c.setAttribute("stroke-width", "2");
+    g.appendChild(c);
+    var t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    t.setAttribute("x", n.x); t.setAttribute("y", n.sub ? n.y - 1 : n.y + 4);
+    t.setAttribute("text-anchor", "middle"); t.textContent = n.name;
+    g.appendChild(t);
+    if (n.sub) {
+      var s = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      s.setAttribute("x", n.x); s.setAttribute("y", n.y + 11);
+      s.setAttribute("text-anchor", "middle"); s.setAttribute("class", "sub");
+      s.textContent = n.sub; g.appendChild(s);
+    }
+    g.addEventListener("click", function () { select(active === id ? null : id); });
+    g.dataset.id = id;
+    nodesG.appendChild(g);
+  });
+
+  function select(id) {
+    active = id;
+    var lines = edgesG.querySelectorAll("line");
+    var groups = nodesG.querySelectorAll("g.node");
+    if (!id) {
+      lines.forEach(function (l) { l.setAttribute("opacity", "0.55"); l.setAttribute("stroke-width", "2.4"); });
+      groups.forEach(function (g) { g.querySelector("circle").setAttribute("opacity", "1"); g.querySelector("circle").setAttribute("stroke-width", "2"); });
+      renderDetail(nodes.hvem, "hvem"); return;
+    }
+    var connected = {};
+    connected[id] = true;
+    lines.forEach(function (l) {
+      var hit = l.dataset.a === id || l.dataset.b === id;
+      l.setAttribute("opacity", hit ? "1" : "0.12");
+      l.setAttribute("stroke-width", hit ? "3.4" : "2.4");
+      if (hit) { connected[l.dataset.a] = true; connected[l.dataset.b] = true; }
+    });
+    groups.forEach(function (g) {
+      var gid = g.dataset.id;
+      var circ = g.querySelector("circle");
+      circ.setAttribute("opacity", connected[gid] ? "1" : "0.25");
+      circ.setAttribute("stroke-width", gid === id ? "3.5" : "2");
+      circ.setAttribute("stroke", gid === id ? "#eef1f6" : "#0b0d12");
+    });
+    renderDetail(nodes[id], id);
+  }
+
+  function renderDetail(n, id) {
+    var el = document.getElementById("detail");
+    var rc = n.rhyme.ok ? "rhyme-tag" : "rhyme-tag none";
+    el.innerHTML =
+      '<span class="badge ' + n.blabel + '">' + n.badge + '</span>' +
+      '<h3>' + n.name + (n.sub ? ' <span style="color:var(--faint);font-size:.7em;font-weight:500">' + n.sub + '</span>' : '') + '</h3>' +
+      '<p class="bio">' + n.bio + '</p>' +
+      '<div class="' + rc + '">' + n.rhyme.text + '</div>';
+  }
+
+  renderDetail(nodes.hvem, "hvem");
+})();
+</script>
