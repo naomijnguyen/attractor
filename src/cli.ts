@@ -17,22 +17,21 @@
  *   attractor context              print the system-prompt block
  */
 import { readFile } from "node:fs/promises";
-import { applyConsolidation, applyUpdate, basinsNeedingConsolidation, buildAttractorContext, createInitialState } from "./model";
+import {
+  applyConsolidation,
+  applyUpdate,
+  basinsNeedingConsolidation,
+  buildAttractorContext,
+  buildSummaryPrompt,
+  createInitialState,
+  parseSummary,
+} from "./model";
 import { ApiEngine, ClaudeCliEngine, consolidateBasin, DEFAULT_MODELS, type Engine, type ModelConfig } from "./engine";
 import { renderComparison, renderHistory, renderRuns, renderSessions, renderState } from "./render";
 import { listSessions, parseSession, toTranscript } from "./sessions";
 import { FileStore } from "./store";
 import { RunLog } from "./runs";
 import type { BasinSeed, RunRecord } from "./types";
-
-const SUMMARY_PROMPT = `Analyze this conversation and return a JSON object with exactly two fields:
-1. "summary": A concise 1-2 sentence summary of what was discussed and accomplished.
-2. "vibes": An array of 1-4 vibe tags describing the conversational energy. Choose from: playful, serious, technical, philosophical, creative, nerdy, focused, casual, witty, warm, chaotic, chill, intense, curious, supportive, sarcastic, brainstormy, deep.
-
-Return ONLY valid JSON, no markdown formatting, no explanation.
-
-Conversation:
-`;
 
 function fail(message: string): never {
   console.error(message);
@@ -45,18 +44,11 @@ async function requireState(store: FileStore) {
   return state;
 }
 
+// Throws rather than exits: `compare` needs one leg's failure to be one leg's
+// failure, not the end of the run. The prompt, the cap and the parser are all
+// shared with the hosted path so the two cannot drift.
 async function summarize(engine: Engine, transcript: string, model: string) {
-  const capped = transcript.length > 40000 ? transcript.slice(-40000) : transcript;
-  const raw = await engine.complete(SUMMARY_PROMPT + capped, model);
-  const clean = raw.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  try {
-    const parsed = JSON.parse(clean) as { summary: string; vibes?: string[] };
-    return { summary: parsed.summary, vibes: parsed.vibes ?? [] };
-  } catch {
-    // Throw rather than exit: `compare` needs one leg's failure to be one
-    // leg's failure, not the end of the run.
-    throw new Error(`Could not parse a summary from the reply: ${clean.slice(0, 200) || "(empty)"}`);
-  }
+  return parseSummary(await engine.complete(buildSummaryPrompt(transcript), model));
 }
 
 /**

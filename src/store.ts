@@ -84,12 +84,29 @@ export class FileStore implements Store {
 
   private async read(): Promise<{ state: AttractorState | null; history: HistorySnapshot[] }> {
     const { readFile } = await import("node:fs/promises");
+
+    // Absent and damaged are different facts with different remedies: one means
+    // "seed it", the other means "look at this file before you overwrite it".
+    // Collapsing them into `null` invites the CLI to offer a fresh seed on top
+    // of recoverable data.
+    let raw: string;
     try {
-      const raw = await readFile(this.path, "utf8");
+      raw = await readFile(this.path, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return { state: null, history: [] };
+      }
+      throw new Error(`Could not read ${this.path}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    try {
       const parsed = JSON.parse(raw) as { state: AttractorState; history?: HistorySnapshot[] };
       return { state: parsed.state ?? null, history: parsed.history ?? [] };
     } catch {
-      return { state: null, history: [] };
+      throw new Error(
+        `${this.path} exists but is not valid JSON. It has not been modified — ` +
+          `inspect or move it before seeding, or a fresh seed will overwrite it.`,
+      );
     }
   }
 

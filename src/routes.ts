@@ -1,6 +1,6 @@
 import type { BasinSeed, Env } from "./types";
 import { json, error, matchRoute } from "./utils";
-import { applyUpdate, createInitialState, toBasinId } from "./model";
+import { applyUpdate, buildSummaryPrompt, createInitialState, parseSummary, toBasinId } from "./model";
 import { getAttractorState, saveAttractorState } from "./store";
 import { ApiEngine, generateAttractorUpdate, modelsFromEnv } from "./engine";
 
@@ -153,37 +153,27 @@ export async function handleAttractorRoutes(
       return error("Attractor not initialized.", 400);
     }
 
-    // Truncate messages for summarization (same pattern as summarize.ts)
-    const truncated = body.messages.slice(-30).map(m => ({
-      role: m.role as "user" | "assistant",
-      content: m.content.length > 500 ? m.content.slice(0, 500) + "..." : m.content,
-    }));
-
-    // Summarize the transcript before it reaches the attractor.
-    const summaryPrompt = `Analyze this conversation and return a JSON object with exactly two fields:
-1. "summary": A concise 1-2 sentence summary of what was discussed and accomplished.
-2. "vibes": An array of 1-4 vibe tags that describe the conversational energy. Choose from: playful, serious, technical, philosophical, creative, adorable, nerdy, focused, casual, witty, warm, chaotic, chill, intense, curious, supportive, sarcastic, wholesome, brainstormy, deep.
-
-Return ONLY valid JSON, no markdown formatting, no explanation.`;
-
     // Route through the shared engine rather than an inline fetch. This path
     // previously hardcoded a model, sent a now-deprecated temperature, and
     // read content[0] — which is a thinking block on reasoning models. All
     // three were already fixed in ApiEngine and none of the fixes reached
     // here, because this duplicated the call instead of using it.
     const engine = new ApiEngine(env.ANTHROPIC_API_KEY, env.ATTRACTOR_SUBJECT, modelsFromEnv(env));
-    const transcript = truncated
+
+    // Assemble the whole conversation and let the shared cap trim it. This
+    // path used to keep the last 30 messages at 500 characters each while the
+    // CLI kept the last 40,000 characters of transcript — so the same
+    // conversation summarized differently depending on which door it came in,
+    // and moved the attractor differently as a result. One policy now, in
+    // buildSummaryPrompt.
+    const transcript = body.messages
       .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
       .join("\n\n");
 
     let summary: string;
     let vibes: string[];
     try {
-      const text = await engine.complete(`${summaryPrompt}\n\nConversation:\n${transcript}`);
-      const clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      const parsed = JSON.parse(clean) as { summary: string; vibes?: string[] };
-      summary = parsed.summary;
-      vibes = parsed.vibes || [];
+      ({ summary, vibes } = parseSummary(await engine.complete(buildSummaryPrompt(transcript))));
     } catch (err) {
       return error(
         `Failed to summarize conversation: ${err instanceof Error ? err.message : "unknown"}`,
