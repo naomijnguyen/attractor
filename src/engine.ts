@@ -31,6 +31,12 @@ export const ANALYSIS_SYSTEM =
 const UPDATE_INSTRUCTION = "Generate the attractor update for this conversation.";
 
 /**
+ * Deadline for one `claude -p` call. Generous: a process start plus a reasoning
+ * model on a long transcript is slow, and a false timeout is worse than a wait.
+ */
+const CLI_TIMEOUT_MS = 120_000;
+
+/**
  * Update generation, defined once and shared.
  *
  * Both engines route through `Engine.call` with the attractor prompt as the
@@ -198,7 +204,14 @@ export class ClaudeCliEngine implements Engine {
         "--setting-sources", "",       // no CLAUDE.md, user or project
         "--system-prompt", system,
       ];
-      const proc = spawn(this.bin, args, { stdio: ["pipe", "pipe", "pipe"] });
+      // Without a deadline a hung `claude -p` leaves this Promise unsettled
+      // forever, and `ingest` waits with no way to tell slow from dead. Node
+      // kills the process on timeout and fires `close` with a non-zero code,
+      // which the handler below already reports.
+      const proc = spawn(this.bin, args, {
+        stdio: ["pipe", "pipe", "pipe"],
+        timeout: CLI_TIMEOUT_MS,
+      });
       let out = "";
       let err = "";
       proc.stdout.on("data", (d) => (out += d));
