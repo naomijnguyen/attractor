@@ -1,3 +1,12 @@
+---
+Title        Attractor — persistent topological memory across conversations
+Purpose      The introduction: what the Attractor is, the idea behind it, the math, and how to run it locally or hosted. Start here.
+Author       Jennifer Naomi Nguyen
+Canonical    ~/Projects/Anthropic/attractor — authoritative. The docs-only copy at ~/Projects/Anthropic/interpretability/attractor is superseded (see its SUPERSEDED.md).
+Updated      2026-09-13
+Dependencies Node 18+. Local mode needs the `claude` binary on PATH; hosted mode needs a Cloudflare account (KV + Queues) and an Anthropic API key.
+---
+
 # Attractor
 
 > A persistent topological memory structure that tracks how modes of engagement evolve across conversations.
@@ -7,6 +16,19 @@ Language models don't remember across sessions. But when the same person talks t
 It represents areas of engagement as weighted **basins** — gravity wells that conversations fall into. After each conversation the basins shift: some gain weight, untouched ones drift toward dormancy, connections form where thinking moved between two modes. The resulting state is rendered into a text block and injected into the next conversation's system prompt.
 
 Conversation → summary → attractor update → system prompt → conversation.
+
+---
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| **README.md** (this file) | What it is, the idea, the math, how to run it |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Components, the two seams, data flow, why it is shaped this way |
+| [TECHNICAL.md](TECHNICAL.md) | Install, configuration, every endpoint and command, deploy, known gotchas |
+| [docs/model.md](docs/model.md) | Full mechanics: state shape, update cycle, every tuning constant |
+| [RESEARCH.md](RESEARCH.md) | The research framing and open questions |
+| [DESIGN-NOTES.md](DESIGN-NOTES.md) | Decisions taken along the way |
 
 ---
 
