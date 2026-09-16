@@ -141,4 +141,4 @@ Interested in discussing? Reach out.
 
 ---
 
-*Framework developed through sustained human-AI collaboration research with Claude by Anthropic and GPT-4o by OpenAI. Visualizations built with React. Analysis tools in JavaScript.*
+*Framework developed through sustained human-AI collaboration research with Claude Opus 5 by Anthropic and GPT-5.6 Sol by OpenAI. Visualizations built with React. Analysis tools in JavaScript.*
