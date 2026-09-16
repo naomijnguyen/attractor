@@ -1,3 +1,4 @@
+import { classifyTrend, type Trend } from "./model";
 import type { SessionInfo } from "./sessions";
 import type { AttractorState, AttractorUpdate, HistorySnapshot, RunRecord } from "./types";
 
@@ -21,14 +22,18 @@ function bar(weight: number, width = BAR_WIDTH): string {
   return "#".repeat(filled) + ".".repeat(width - filled);
 }
 
+/** ASCII alphabet for the shared trend classification. */
+const TREND_ASCII: Record<Trend, string> = {
+  "up-fast": "^^",
+  up: "^",
+  flat: "=",
+  down: "~",
+  "down-fast": "v",
+  unknown: "",
+};
+
 function trendArrow(trajectory: number[]): string {
-  if (trajectory.length < 2) return "";
-  const diff = trajectory[trajectory.length - 1] - trajectory[trajectory.length - 2];
-  if (diff > 0.05) return "^^";
-  if (diff > 0) return "^";
-  if (diff < -0.05) return "v";
-  if (diff < 0) return "~";
-  return "=";
+  return TREND_ASCII[classifyTrend(trajectory)];
 }
 
 export function renderState(state: AttractorState): string {
@@ -74,7 +79,9 @@ export function renderState(state: AttractorState): string {
 export function renderHistory(history: HistorySnapshot[]): string {
   if (history.length === 0) return "No history yet.";
 
-  const ids = history[0].basins.map((b) => b.id);
+  // Union across every snapshot, not just the oldest: a basin that emerged
+  // later still deserves a column.
+  const ids = [...new Set(history.flatMap((h) => h.basins.map((b) => b.id)))];
   const head = ids
     .map((id) => {
       let label = id.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -94,7 +101,11 @@ export function renderHistory(history: HistorySnapshot[]): string {
     const weights = new Map(snap.basins.map((b) => [b.id, b.weight]));
     const row = ids
       .map((id) => {
-        const weight = weights.get(id) ?? 0;
+        // Not `?? 0`: MIN_WEIGHT is 0.05, so a rendered 0% is a value the model
+        // guarantees can never occur, and it reads as "dead" rather than "no
+        // data". Absence gets its own mark.
+        const weight = weights.get(id);
+        if (weight === undefined) return "—".padStart(5) + " ".repeat(HISTORY_COL - 5);
         return `${(weight * 100).toFixed(0).padStart(4)}% ${bar(weight, HISTORY_BAR)}  `;
       })
       .join("");
@@ -136,7 +147,9 @@ function wrap(text: string, width: number, indent: string): string {
   const lines: string[] = [];
   let line = "";
   for (const word of words) {
-    if (line.length + word.length + 1 > width) {
+    // `line &&` guards the first iteration: a first word longer than `width`
+    // would otherwise push the empty string and open the output with a blank.
+    if (line && line.length + word.length + 1 > width) {
       lines.push(line);
       line = word;
     } else {
@@ -213,9 +226,10 @@ function renderDeltaMatrix(before: AttractorState, results: ComparisonResult[]):
   const COL = 14;
   const labelWidth = Math.max(...before.basins.map((b) => b.label.length), 8);
 
+  // Unlike `shortModel`, this deliberately KEEPS the cli:/api: prefix --
+  // telling the two transports apart is the entire point of this table.
   const short = (model: string) =>
     model
-      .replace(/^(cli|api):/, (m) => m)
       .replace(/claude-/, "")
       .replace(/-\d{8}$/, "")
       .slice(0, COL - 1);

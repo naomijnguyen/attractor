@@ -310,6 +310,51 @@ Rules:
 Return ONLY the JSON object, no markdown formatting.`;
 }
 
+// === Summarization: one policy, both paths ===
+
+/**
+ * How much transcript reaches the summarizer.
+ *
+ * The two paths had drifted: the CLI capped the assembled transcript at 40,000
+ * characters, while the Worker kept the last 30 messages and cut each at 500 --
+ * so the same conversation produced different summaries depending on which door
+ * it came in, and therefore moved the attractor differently. One constant now.
+ */
+export const MAX_TRANSCRIPT_CHARS = 40_000;
+
+/** Keep the most recent text; the end of a conversation carries the outcome. */
+export function capTranscript(transcript: string): string {
+  return transcript.length > MAX_TRANSCRIPT_CHARS
+    ? transcript.slice(-MAX_TRANSCRIPT_CHARS)
+    : transcript;
+}
+
+/** The summarization prompt, defined once so neither path can drift. */
+export function buildSummaryPrompt(transcript: string): string {
+  return `Analyze this conversation and return a JSON object with exactly two fields:
+1. "summary": A concise 1-2 sentence summary of what was discussed and accomplished.
+2. "vibes": An array of 1-4 vibe tags describing the conversational energy. Choose from: playful, serious, technical, philosophical, creative, nerdy, focused, casual, witty, warm, chaotic, chill, intense, curious, supportive, sarcastic, brainstormy, deep.
+
+Return ONLY valid JSON, no markdown formatting, no explanation.
+
+Conversation:
+${capTranscript(transcript)}`;
+}
+
+/** Parse a summarization reply. Throws with the reply text, so callers can report it. */
+export function parseSummary(text: string): { summary: string; vibes: string[] } {
+  const clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  try {
+    const parsed = JSON.parse(clean) as { summary?: string; vibes?: string[] };
+    if (typeof parsed.summary !== "string" || !parsed.summary.trim()) {
+      throw new Error("no summary field");
+    }
+    return { summary: parsed.summary, vibes: Array.isArray(parsed.vibes) ? parsed.vibes : [] };
+  } catch {
+    throw new Error(`Could not parse a summary from the reply: ${clean.slice(0, 200) || "(empty)"}`);
+  }
+}
+
 /**
  * Parse and normalize a model's response into an AttractorUpdate.
  * The model is not trusted to return well-formed shapes, or honest numbers.
@@ -327,7 +372,15 @@ export function parseUpdate(text: string): AttractorUpdate {
   if (!Array.isArray(parsed.emerging_patterns)) parsed.emerging_patterns = [];
   if (typeof parsed.phase_shift !== "boolean") parsed.phase_shift = false;
   for (const bu of parsed.basin_updates) {
-    bu.weight_delta = Math.max(-MAX_DELTA, Math.min(MAX_DELTA, bu.weight_delta));
+    // Validate the domain, not just the shape. A non-numeric delta would make
+    // both Math.min and Math.max return NaN, and NaN is contagious: it poisons
+    // the weight, then entropy, and every comparison against it is false -- so
+    // the dominant-basin search silently picks the wrong basin. And it
+    // persists, because the state is saved.
+    const delta = Number(bu.weight_delta);
+    bu.weight_delta = Number.isFinite(delta)
+      ? Math.max(-MAX_DELTA, Math.min(MAX_DELTA, delta))
+      : 0;
   }
   return parsed;
 }
@@ -403,6 +456,29 @@ export function applyConsolidation(state: AttractorState, basinId: string, keywo
   };
 }
 
+/**
+ * Which way a basin moved on its last step, as a classification rather than a
+ * symbol.
+ *
+ * Two places render this — the terminal (ASCII) and the injected context block
+ * (Unicode) — and they had drifted to different thresholds and a different
+ * number of states. One function decides; each caller keeps its own alphabet.
+ */
+export type Trend = "up-fast" | "up" | "flat" | "down" | "down-fast" | "unknown";
+
+/** Fast movement is a step of more than this in one update. */
+const TREND_FAST = 0.05;
+
+export function classifyTrend(trajectory: number[]): Trend {
+  if (trajectory.length < 2) return "unknown";
+  const diff = trajectory[trajectory.length - 1] - trajectory[trajectory.length - 2];
+  if (diff > TREND_FAST) return "up-fast";
+  if (diff > 0) return "up";
+  if (diff < -TREND_FAST) return "down-fast";
+  if (diff < 0) return "down";
+  return "flat";
+}
+
 // === System prompt integration ===
 
 /**
@@ -417,14 +493,15 @@ export function buildAttractorContext(state: AttractorState, subject = "the user
   const active = sorted.filter((b) => b.weight > ACTIVE_THRESHOLD);
   const dormant = sorted.filter((b) => b.weight <= ACTIVE_THRESHOLD);
 
-  const arrowFor = (b: Basin): string => {
-    const t = b.trajectory;
-    if (t.length < 2) return "→";
-    const [prev, last] = [t[t.length - 2], t[t.length - 1]];
-    if (last > prev) return "↑";
-    if (last < prev) return "↓";
-    return "→";
+  const ARROWS: Record<Trend, string> = {
+    "up-fast": "↑",
+    up: "↑",
+    flat: "→",
+    down: "↓",
+    "down-fast": "↓",
+    unknown: "→",
   };
+  const arrowFor = (b: Basin): string => ARROWS[classifyTrend(b.trajectory)];
 
   const activeLines = active
     .map((b) => {

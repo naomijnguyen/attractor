@@ -35,6 +35,26 @@ class ForceSimulation {
     this.alpha = 1;
   }
 
+  /**
+   * Adopt new dimensions without discarding the layout.
+   *
+   * Rebuilding on resize threw every node back to the starting circle, so
+   * dragging a window edge detonated the graph instead of reflowing it. Scale
+   * positions with the container and warm alpha back up so the existing layout
+   * settles into the new bounds.
+   */
+  resize(width, height) {
+    const sx = width / this.width;
+    const sy = height / this.height;
+    this.width = width;
+    this.height = height;
+    for (const node of this.nodes) {
+      node.x *= sx;
+      node.y *= sy;
+    }
+    this.alpha = Math.max(this.alpha, 0.3);
+  }
+
   tick() {
     if (this.alpha < 0.001) return false;
 
@@ -132,6 +152,10 @@ export default function AttractorView({ onOpenSidebar }) {
   const [state, setState] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  // null | "unauthorized" | "unreachable". Without this, a 401 rendered as
+  // "no attractor initialized yet" -- telling the user their data was gone
+  // when the token was simply wrong.
+  const [loadError, setLoadError] = useState(null);
   const [selectedBasin, setSelectedBasin] = useState(null);
   const [hoveredBasin, setHoveredBasin] = useState(null);
   const canvasRef = useRef(null);
@@ -152,6 +176,7 @@ export default function AttractorView({ onOpenSidebar }) {
       setLoading(false);
     }).catch((err) => {
       console.error("Failed to load attractor:", err);
+      setLoadError(err?.status === 401 ? "unauthorized" : "unreachable");
       setLoading(false);
     });
   }, []);
@@ -204,13 +229,41 @@ export default function AttractorView({ onOpenSidebar }) {
     initSimulation();
   }, [initSimulation]);
 
-  // Handle resize
+  // Handle resize. Debounced, because `resize` fires continuously while a
+  // window edge is dragged -- undebounced this ran dozens of times a second.
   useEffect(() => {
-    const handleResize = () => {
-      initSimulation();
+    let timer = null;
+
+    const apply = () => {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
+
+      const { width, height } = container.getBoundingClientRect();
+      if (width === 0 || height === 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+
+      // Reflow if there is a layout to keep; only build from scratch if there
+      // isn't one yet.
+      if (simRef.current) simRef.current.resize(width, height);
+      else initSimulation();
     };
+
+    const handleResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(apply, 150);
+    };
+
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", handleResize);
+    };
   }, [initSimulation]);
 
   // Animation loop
@@ -268,9 +321,6 @@ export default function AttractorView({ onOpenSidebar }) {
       }
 
       // Draw nodes
-      const mx = mouseRef.current.x;
-      const my = mouseRef.current.y;
-
       for (const node of sim.nodes) {
         const color = weightToColor(node.weight);
         const isHovered = hoveredBasin === node.id;
@@ -385,6 +435,23 @@ export default function AttractorView({ onOpenSidebar }) {
     return (
       <div className="flex-1 flex items-center justify-center bg-gray-900">
         <div className="text-gray-500 text-sm">Loading attractor...</div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center bg-gray-900 gap-4">
+        <div className="text-gray-400 text-sm">
+          {loadError === "unauthorized"
+            ? "Not authorized."
+            : "Could not reach the attractor API."}
+        </div>
+        <div className="text-gray-600 text-xs max-w-sm text-center leading-relaxed">
+          {loadError === "unauthorized"
+            ? "The API rejected this token. Your attractor is unchanged — check the token and reload."
+            : "The request failed before it reached the attractor. Check the API URL and that the Worker is deployed."}
+        </div>
       </div>
     );
   }
@@ -645,7 +712,7 @@ export default function AttractorView({ onOpenSidebar }) {
                     })}
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    {snap.basins
+                    {[...snap.basins]
                       .sort((a, b) => b.weight - a.weight)
                       .slice(0, 5)
                       .map((b) => {
