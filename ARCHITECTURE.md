@@ -2,8 +2,8 @@
 Title        Attractor architecture
 Purpose      The shape of the system — components, seams, data flow, and why it is built this way. Read before changing anything structural.
 Author       Jennifer Naomi Nguyen
-Canonical    ~/Projects/Anthropic/attractor/ARCHITECTURE.md — authoritative. The docs-only copy at ~/Projects/Anthropic/interpretability/attractor is superseded (see its SUPERSEDED.md).
-Updated      2026-09-13
+Canonical    ~/Bootwitch/Projects/attractor/ARCHITECTURE.md — authoritative. A docs-only copy previously lived at ~/Projects/Anthropic/interpretability/attractor; it was superseded and did not move to the current project home.
+Updated      2026-09-16
 Dependencies none to read. To run what it describes: Node 18+, and either the `claude` binary on PATH (local mode) or a Cloudflare account + Anthropic API key (hosted mode).
 ---
 

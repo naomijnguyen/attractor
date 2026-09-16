@@ -2,8 +2,8 @@
 Title        Attractor technical reference
 Purpose      Operational reference — install, configuration, every endpoint and CLI command, deploy steps, and the known gotchas. Reach for this when running or deploying it.
 Author       Jennifer Naomi Nguyen
-Canonical    ~/Projects/Anthropic/attractor/TECHNICAL.md — authoritative
-Updated      2026-09-13
+Canonical    ~/Bootwitch/Projects/attractor/TECHNICAL.md — authoritative
+Updated      2026-09-16
 Dependencies Node 18+ (the CLI uses `node:crypto`, `node:fs/promises`, and a global `Response`). Local mode needs the `claude` binary on PATH. Hosted mode needs a Cloudflare account with KV + Queues, and an Anthropic API key.
 ---
 
