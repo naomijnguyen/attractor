@@ -28,7 +28,12 @@ async function request(path) {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {
-    throw new Error(`${path} failed: ${res.status}`);
+    // Attach the status rather than only baking it into the message. Callers
+    // need to tell "not authorized" apart from "not seeded" and "unreachable",
+    // and a status buried in a string cannot be branched on.
+    const err = new Error(`${path} failed: ${res.status}`);
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
