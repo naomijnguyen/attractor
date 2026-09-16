@@ -2,8 +2,8 @@
 Title        Attractor — persistent topological memory across conversations
 Purpose      The introduction: what the Attractor is, the idea behind it, the math, and how to run it locally or hosted. Start here.
 Author       Jennifer Naomi Nguyen
-Canonical    ~/Projects/Anthropic/attractor — authoritative. The docs-only copy at ~/Projects/Anthropic/interpretability/attractor is superseded (see its SUPERSEDED.md).
-Updated      2026-09-13
+Canonical    ~/Bootwitch/Projects/attractor — authoritative. A docs-only copy previously lived at ~/Projects/Anthropic/interpretability/attractor; it was superseded and did not move to the current project home.
+Updated      2026-09-16
 Dependencies Node 18+. Local mode needs the `claude` binary on PATH; hosted mode needs a Cloudflare account (KV + Queues) and an Anthropic API key.
 ---
 
