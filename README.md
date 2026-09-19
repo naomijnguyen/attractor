@@ -523,6 +523,12 @@ Timestamp          Context Architec.        Immunology    Systems Design  Creati
 
 ---
 
+## Tech stack and AI collaboration
+
+The core is TypeScript on Node.js. Local mode calls the Claude Code CLI; hosted mode runs on Cloudflare Workers with KV and Queues and calls the Anthropic API. The repository also includes a zero-dependency Bash client and a React canvas visualization.
+
+Since 2025, I’ve been making software in active collaboration with AI coding systems across providers, and I want to do more of it. I built Attractor with Claude and Claude Code from Anthropic, then used its model-comparison workflow to study how different Claude models change the system’s behavior.
+
 ## Status
 
 Working, deployed, and in daily use. Known rough edges:
@@ -537,4 +543,3 @@ Working, deployed, and in daily use. Known rough edges:
 
 MIT — see [LICENSE](LICENSE).
 
-**Jennifer Naomi Nguyen**, with **Claude** as contributor.
