@@ -31,6 +31,8 @@ import { renderComparison, renderHistory, renderRuns, renderSessions, renderStat
 import { listSessions, parseSession, toTranscript } from "./sessions";
 import { FileStore } from "./store";
 import { RunLog } from "./runs";
+import { describeDiff, isNoop, publishable, publishableHistory } from "./publish";
+import { spawnSync } from "node:child_process";
 import type { BasinSeed, RunRecord } from "./types";
 
 function fail(message: string): never {
@@ -262,9 +264,75 @@ async function main() {
       console.log(renderState(await requireState(store)));
       break;
 
+    case "push": {
+      // Two separate Cloudflare accounts hold the attractor Worker and the
+      // portfolio Worker, so a shared KV binding is not available. The state
+      // is copied across instead -- which is why there is a review step.
+      const namespace = process.env.ATTRACTOR_PUBLISH_NAMESPACE_ID;
+      const config = process.env.ATTRACTOR_PUBLISH_CONFIG;
+      const site = process.env.ATTRACTOR_PUBLISH_SITE ?? "https://naomijnguyen.com";
+      if (!namespace || !config) {
+        fail([
+          "Set both before pushing:",
+          "  ATTRACTOR_PUBLISH_NAMESPACE_ID   the portfolio's ATTRACTOR_KV id",
+          "  ATTRACTOR_PUBLISH_CONFIG         path to wrangler.portfolio.local.jsonc",
+        ].join("\n"));
+      }
+
+      const next = publishable(await requireState(store));
+      const live = await fetchLive(site);
+      const diff = describeDiff(live, next);
+      console.log(`Publishing to ${site}\n`);
+      console.log(diff);
+
+      if (isNoop(live, next)) break;
+      // --yes is opt-in rather than a prompt so this stays scriptable, but the
+      // diff always prints first: you never push something you have not seen.
+      if (!process.argv.includes("--yes")) {
+        console.log("\nDry run. Re-run with --yes to publish.");
+        break;
+      }
+
+      const history = publishableHistory(await store.history());
+      kvPut(config, namespace, "attractor:state", JSON.stringify(next));
+      kvPut(config, namespace, "attractor:history", JSON.stringify(history));
+      console.log(`\nPublished. ${site} now serves this state.`);
+      break;
+    }
+
     default:
-      fail(`Unknown command "${command}". Try: seed, ingest, sessions, compare, runs, show, history, context`);
+      fail(`Unknown command "${command}". Try: seed, ingest, sessions, compare, runs, show, history, context, push`);
   }
+}
+
+/** What the portfolio currently serves, or null if it has never been pushed. */
+async function fetchLive(site: string) {
+  try {
+    const res = await fetch(`${site}/api/attractor`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as { initialized?: boolean; state?: unknown };
+    return body.initialized ? (body.state as Awaited<ReturnType<typeof requireState>>) : null;
+  } catch {
+    // An unreachable site should not block the diff -- it just means every
+    // basin reads as new, which is honest about what the push would do.
+    return null;
+  }
+}
+
+/**
+ * Write one KV key through wrangler.
+ *
+ * Shelling out rather than adding a write endpoint to the portfolio: the site
+ * stays read-only in public, and auth is whatever `wrangler login` already
+ * granted, so no token has to exist anywhere.
+ */
+function kvPut(config: string, namespaceId: string, key: string, value: string) {
+  const result = spawnSync(
+    "npx",
+    ["wrangler", "kv", "key", "put", key, value, "--namespace-id", namespaceId, "--config", config, "--remote"],
+    { stdio: ["ignore", "inherit", "inherit"] },
+  );
+  if (result.status !== 0) fail(`wrangler failed writing ${key}`);
 }
 
 main().catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
