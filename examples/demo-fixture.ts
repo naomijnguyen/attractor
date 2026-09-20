@@ -14,14 +14,62 @@ import { applyUpdate, createInitialState } from "../src/model";
 import type { AttractorUpdate, HistorySnapshot } from "../src/types";
 
 let state = createInitialState([
-  { label: "Research methodology", description: "Study design and controls", keywords: ["assay", "controls"] },
-  { label: "Systems architecture", description: "How components fit together", keywords: ["api", "workers"] },
-  { label: "Creative writing", description: "Prose and voice", keywords: ["draft", "voice"] },
+  {
+    label: "Systems architecture",
+    description: "How components fit together, and where the trust boundary goes",
+    keywords: ["workers", "kv", "queues"],
+  },
+  {
+    label: "Context and memory",
+    description: "State that outlives a single conversation",
+    keywords: ["persistence", "summaries"],
+  },
+  {
+    label: "Developer tooling",
+    description: "CLIs and scaffolds that make the next project cheaper",
+    keywords: ["cli", "bash"],
+  },
+  {
+    label: "Provenance and documentation",
+    description: "Which copy is authoritative, and why a decision was made",
+    keywords: ["canonical", "headers"],
+  },
 ]);
 
+// These mirror a real week rather than a tidy demo. The shape matters more
+// than the numbers: one basin has to run away with it, one has to fade, and
+// the rest sit in between -- otherwise every node renders the same size and
+// the same colour, and a visualization of divergence shows no divergence.
+// Context and memory is never updated on purpose, so its decay toward 0.3 is
+// visible rather than described.
 const updates: AttractorUpdate[] = [
   {
-    basin_updates: [{ id: "systems-architecture", weight_delta: 0.2, new_keywords: ["kv", "queues"] }],
+    basin_updates: [
+      { id: "provenance-and-documentation", weight_delta: 0.25, new_keywords: ["superseded", "duplicates"] },
+      { id: "developer-tooling", weight_delta: -0.1 },
+    ],
+    new_connections: [],
+    emerging_patterns: ["which copy is live"],
+    new_basin: null,
+    phase_shift: false,
+  },
+  {
+    basin_updates: [
+      { id: "systems-architecture", weight_delta: 0.3, new_keywords: ["cors", "same-origin"] },
+      { id: "provenance-and-documentation", weight_delta: -0.15 },
+    ],
+    new_connections: [
+      { from: "systems-architecture", to: "provenance-and-documentation", reason: "documenting why CORS was designed out" },
+    ],
+    emerging_patterns: ["constraints as information"],
+    new_basin: null,
+    phase_shift: false,
+  },
+  {
+    basin_updates: [
+      { id: "systems-architecture", weight_delta: 0.3, new_keywords: ["proxy", "secrets"] },
+      { id: "provenance-and-documentation", weight_delta: -0.1 },
+    ],
     new_connections: [],
     emerging_patterns: [],
     new_basin: null,
@@ -29,18 +77,23 @@ const updates: AttractorUpdate[] = [
   },
   {
     basin_updates: [
+      { id: "developer-tooling", weight_delta: 0.25, new_keywords: ["vite", "fixtures"] },
       { id: "systems-architecture", weight_delta: 0.15 },
-      { id: "research-methodology", weight_delta: 0.1, new_keywords: ["reproducibility"] },
     ],
-    new_connections: [{ from: "systems-architecture", to: "research-methodology", reason: "designing for reproducibility" }],
-    emerging_patterns: ["reproducibility"],
+    new_connections: [
+      { from: "developer-tooling", to: "systems-architecture", reason: "the demo mirrors the deployment on purpose" },
+    ],
+    emerging_patterns: ["make it runnable"],
     new_basin: null,
     phase_shift: false,
   },
   {
-    basin_updates: [{ id: "systems-architecture", weight_delta: 0.2 }],
+    basin_updates: [
+      { id: "developer-tooling", weight_delta: 0.1 },
+      { id: "systems-architecture", weight_delta: 0.1 },
+    ],
     new_connections: [],
-    emerging_patterns: ["provenance"],
+    emerging_patterns: ["make it runnable", "provenance"],
     new_basin: null,
     phase_shift: false,
   },

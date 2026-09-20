@@ -48,6 +48,8 @@ function demoApi() {
 
 export default defineConfig({
   root: "web",
+  // envDir follows `root` by default, which would hide .env.local inside web/.
+  envDir: process.cwd(),
   plugins: [react(), ...(LIVE ? [] : [demoApi()])],
   // Demo mode is read-only and unauthenticated by design, so the client skips
   // its token check. In live mode every route is token-guarded as usual.

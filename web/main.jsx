@@ -12,31 +12,48 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import AttractorView from "./AttractorView";
-import { setToken } from "./useApi";
+import { clearToken, hasToken, setToken } from "./useApi";
 
 // Injected by vite.config.js. True for `npm run web`, false for `web:live`.
 const DEMO = __ATTRACTOR_DEMO__;
 
-// TODO(human): decide how LIVE mode obtains the ATTRACTOR_TOKEN.
+// How live mode gets its bearer token, in three steps, cheapest first.
 //
-// Only reached by `npm run web:live`. AttractorView reads the token from
-// localStorage via useApi.js; with none, every request 401s and the view shows
-// its "token rejected" state with no way to recover. Return true once a token
-// is stored (call `setToken(value)`), or false to render the notice instead.
-//
-// Directions, with trade-offs:
-//   - `prompt()` on first load: three lines, no UI, but browsers can suppress
-//     it and the value is visible as you type.
-//   - `import.meta.env.VITE_ATTRACTOR_TOKEN` from .env.local: nothing to type
-//     and survives reloads, but it is a token in a file you must gitignore.
-//   - A small inline form: the most work, and the only option that can show an
-//     error and let someone retry without editing files.
-//   - URL hash (#token=...), stripped immediately: easy to send yourself, but
-//     it lands in browser history.
-//
-// Returning true unconditionally is legitimate too, if you would rather let
-// AttractorView surface its own 401.
+// Chosen for the case that actually happens: one person, on localhost, looking
+// at their own Worker. A proper login form would be more polished and would be
+// the wrong tool — this is a dev-server demo, not a deployed app, and nothing
+// here should imply it is safe to expose.
 function ensureLiveToken() {
+  // 1. #reset escape hatch. A token the Worker rejects otherwise sits in
+  //    localStorage forever: the view renders its 401 state, which has no way
+  //    to clear it, so the only exit is devtools. Cheap to add, awful to lack.
+  if (window.location.hash === "#reset") {
+    clearToken();
+    window.location.hash = "";
+  }
+
+  // 2. VITE_ATTRACTOR_TOKEN from .env.local, which .gitignore already covers
+  //    via `.env.*`. Preferred because it survives reloads and hard refreshes,
+  //    and because a token typed once into a prompt is a token retyped all
+  //    afternoon. Re-stored every load so editing .env.local actually wins
+  //    over a stale value in localStorage.
+  const fromEnv = import.meta.env.VITE_ATTRACTOR_TOKEN;
+  if (fromEnv) {
+    setToken(fromEnv);
+    return true;
+  }
+
+  // 3. Already stored from a previous visit.
+  if (hasToken()) return true;
+
+  // 4. Last resort. `prompt` is blockable and shows the token as you type, so
+  //    it is the fallback rather than the path — but it means a clone with no
+  //    setup still reaches the view in one step instead of erroring.
+  const typed = window.prompt("ATTRACTOR_TOKEN (or cancel to see setup instructions)");
+  if (typed?.trim()) {
+    setToken(typed.trim());
+    return true;
+  }
   return false;
 }
 
@@ -51,9 +68,14 @@ createRoot(document.getElementById("root")).render(
         <p className="max-w-sm text-sm leading-relaxed">
           Live mode needs an attractor token.
           <br />
-          Implement <code className="text-slate-200">ensureLiveToken()</code> in{" "}
-          <code className="text-slate-200">web/main.jsx</code>, or run{" "}
+          Put <code className="text-slate-200">VITE_ATTRACTOR_TOKEN=...</code> in{" "}
+          <code className="text-slate-200">.env.local</code> and reload, or run{" "}
           <code className="text-slate-200">npm run web</code> for the offline demo.
+          <br />
+          <span className="text-slate-500">
+            A rejected token can be cleared with{" "}
+            <code className="text-slate-300">#reset</code>.
+          </span>
         </p>
       </div>
     )}
