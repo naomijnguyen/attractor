@@ -56,14 +56,37 @@ function canvasFont() {
   return css?.getPropertyValue("--attractor-font")?.trim() || "-apple-system, sans-serif";
 }
 
+/**
+ * The weight the ramp treats as "peak", set once per loaded state.
+ *
+ * The bands used to be absolute, which only worked while weights saturated at
+ * 1.0. Under zero-sum normalization a healthy attractor tops out wherever its
+ * distribution lands -- around 0.55 on real data -- so absolute thresholds put
+ * every basin in the lower bands and the peak colour never appeared at all.
+ * Scaling by the live maximum means the most active basin always reads as peak
+ * and the least always reads as dormant, whatever the absolute numbers do.
+ *
+ * Module-level rather than a prop because weightToColor has eight call sites
+ * across the canvas, the detail panel and the list; threading a max through all
+ * of them would be noise. Same pattern as rampCache above, and there is one
+ * state per view.
+ */
+let weightScale = 1;
+export function setWeightScale(basins) {
+  // Floor of 0.01 so a freshly seeded attractor -- every basin at the same
+  // weight -- divides by something sane instead of by zero.
+  weightScale = Math.max(0.01, ...basins.map((b) => b.weight));
+}
+
 function weightToColor(weight) {
-  // Thresholds unchanged from the original ramp, so banding does not shift for
-  // anyone used to reading these graphs.
+  // Band boundaries unchanged, so the graph reads the same way it always has.
+  // What changed is that they now apply to share-of-maximum, not raw weight.
+  const t = weight / weightScale;
   const p = ramp();
-  if (weight < 0.3) return p.dormant;
-  if (weight < 0.5) return p.low;
-  if (weight < 0.7) return p.mid;
-  if (weight < 0.85) return p.high;
+  if (t < 0.3) return p.dormant;
+  if (t < 0.5) return p.low;
+  if (t < 0.7) return p.mid;
+  if (t < 0.85) return p.high;
   return p.peak;
 }
 
@@ -204,7 +227,7 @@ function Sparkline({ data, width = 120, height = 32, color = "#e0b878" }) {
 }
 
 // --- Main Component ---
-export default function AttractorView({ onOpenSidebar }) {
+export default function AttractorView({ onOpenSidebar = null }) {
   const [state, setState] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -251,11 +274,17 @@ export default function AttractorView({ onOpenSidebar }) {
     canvas.style.width = width + "px";
     canvas.style.height = height + "px";
 
+    // Radius scales by share-of-maximum for the same reason the colour ramp
+    // does: under zero-sum weights nothing reaches 1.0, so an absolute radius
+    // would render every basin small and nearly the same size. Set here rather
+    // than relying on the render-time call, because this effect can run before
+    // that render on the first paint.
+    setWeightScale(state.basins);
     const nodes = state.basins.map(b => ({
       id: b.id,
       label: b.label,
       weight: b.weight,
-      radius: 15 + b.weight * 35,
+      radius: 15 + (b.weight / weightScale) * 35,
       connections: b.connections,
       keywords: b.keywords,
       trajectory: b.trajectory,
@@ -537,6 +566,11 @@ export default function AttractorView({ onOpenSidebar }) {
     );
   }
 
+  // Rescale before anything paints. Cheap, idempotent, and derived purely from
+  // state, so running it during render keeps it in sync with the data actually
+  // being drawn rather than with whatever the last fetch happened to set.
+  setWeightScale(state.basins);
+
   const trajectoryIcon = {
     converging: "↗",
     diverging: "↔",
@@ -549,11 +583,16 @@ export default function AttractorView({ onOpenSidebar }) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <button onClick={onOpenSidebar} className="lg:hidden text-gray-400 hover:text-gray-200">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
+          {/* Only when a host actually has a sidebar to open. Embedded in a
+              page (the portfolio reader) there is none, and a hamburger that
+              does nothing is worse than no hamburger. */}
+          {onOpenSidebar ? (
+            <button onClick={onOpenSidebar} className="lg:hidden text-gray-400 hover:text-gray-200">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          ) : null}
           <span className="text-sm font-bold text-gray-200 tracking-wide">attractor</span>
         </div>
 
