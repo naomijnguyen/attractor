@@ -10,18 +10,48 @@ import type {
 // These are the rules of the system. Changing them changes how it remembers.
 
 /** Basins start neutral; nothing is favoured at seed time. */
-const SEED_WEIGHT = 0.5;
-/** New basins that emerge later start below neutral -- they must earn weight. */
-const NEW_BASIN_WEIGHT = 0.4;
+/**
+ * Where a seeded basin starts.
+ *
+ * Under zero-sum normalization this is also where the system's mean weight
+ * stays forever, since updates redistribute weight rather than add it. 0.35 is
+ * chosen to sit just inside the "low" colour band: a basin has to actually win
+ * attention to climb, and it has somewhere to fall. The old 0.5 put every
+ * basin mid-ramp on day one, so the graph opened at its least informative.
+ */
+const SEED_WEIGHT = 0.35;
+/** New basins that emerge later start below the mean -- they must earn weight. */
+const NEW_BASIN_WEIGHT = 0.25;
 /** A basin never dies. It only goes dormant. */
 const MIN_WEIGHT = 0.05;
 const MAX_WEIGHT = 1;
-/** Untouched basins drift toward this value... */
-const DECAY_TARGET = 0.3;
-/** ...at this fraction per update. Gentle: ~14 updates to close half the gap. */
-const DECAY_RATE = 0.05;
 /** Hard clamp on model-proposed deltas, regardless of what it asks for. */
 const MAX_DELTA = 0.3;
+/**
+ * How much of the mean delta is subtracted from every basin each update.
+ *
+ * Held at 1.0 -- pure zero-sum -- because anything less compounds. Replaying
+ * the 35-run log at 0.7 pinned two basins at the ceiling and at 0.5 pinned two
+ * and returned entropy to 0.983, which is the saturation this exists to
+ * prevent. There is no value that saturates "only a little": residual drift
+ * accumulates without bound, so the softening has to happen elsewhere -- see
+ * REVERSION_RATE.
+ */
+const NORMALIZATION_STRENGTH = 1;
+/**
+ * How far every basin is pulled toward the current mean weight each update.
+ *
+ * Zero-sum alone has a mirror failure: a basin consistently mentioned below
+ * average (ambient -- present in most conversations, the subject of none) sinks
+ * to MIN_WEIGHT and stays there, which is as uninformative as pinning at the
+ * ceiling. This pulls the spread back together without adding weight to the
+ * system, so it softens both extremes instead of only one.
+ *
+ * Unlike the decay it replaces, the target is the live mean rather than a fixed
+ * constant, so it never fights the distribution the conversations produced -- it
+ * only limits how far the tails can run.
+ */
+const REVERSION_RATE = 0.04;
 const MAX_KEYWORDS = 10;
 const MAX_TRAJECTORY = 20;
 /** Above this weight a basin is "active" and appears in the system prompt. */
@@ -128,8 +158,8 @@ export function computeTrajectory(basins: Basin[]): Trajectory {
  * Apply a model-proposed update to state. Pure: returns a new state.
  *
  * Every proposed change passes through a safeguard here -- deltas are clamped,
- * weights are bounded, and untouched basins decay on their own. The model
- * proposes; this function decides.
+ * weights are bounded, and the update is normalized to zero sum so the model
+ * cannot inflate the whole system. The model proposes; this function decides.
  */
 export function applyUpdate(state: AttractorState, update: AttractorUpdate): AttractorState {
   const now = new Date().toISOString();
@@ -147,12 +177,34 @@ export function applyUpdate(state: AttractorState, update: AttractorUpdate): Att
     }
   };
 
+  // --- Zero-sum normalization ---
+  //
+  // The model is overwhelmingly additive: across 35 logged runs it proposed 126
+  // weight deltas, of which 125 were positive (mean +0.058). Applied directly,
+  // every basin reaches MAX_WEIGHT within ~8 updates and the weights stop
+  // carrying information -- which is exactly what happened.
+  //
+  // So a conversation redistributes attention instead of adding it. Unmentioned
+  // basins count as 0 before the mean is taken, which is what gives a
+  // single-topic conversation somewhere to take weight FROM. Saturation becomes
+  // structurally impossible: reaching 1.0 now requires being dominant relative
+  // to everything else, not merely being mentioned often.
+  //
+  // The cost, stated plainly: weight no longer means "how active is this" but
+  // "what share of attention does this hold". A phase where all your work
+  // intensifies together reads as flat. `phase` and conversationCount still
+  // carry the absolute story.
+  const proposed = new Map(update.basin_updates.map((bu) => [bu.id, bu.weight_delta]));
+  const meanDelta =
+    (basins.reduce((sum, b) => sum + (proposed.get(b.id) ?? 0), 0) / (basins.length || 1)) *
+    NORMALIZATION_STRENGTH;
+
   // --- Touched basins: apply deltas and keyword changes ---
   for (const bu of update.basin_updates) {
     const basin = basins.find((b) => b.id === bu.id);
     if (!basin) continue;
 
-    basin.weight = Math.max(MIN_WEIGHT, Math.min(MAX_WEIGHT, basin.weight + bu.weight_delta));
+    basin.weight = Math.max(MIN_WEIGHT, Math.min(MAX_WEIGHT, basin.weight + bu.weight_delta - meanDelta));
 
     if (bu.new_keywords) {
       // Case-insensitive: a model call should not be spent noticing that
@@ -179,7 +231,10 @@ export function applyUpdate(state: AttractorState, update: AttractorUpdate): Att
       basin.keywords = basin.keywords.filter((k) => !removing.includes(k));
     }
 
-    // Only positive activation counts as the basin having been "used".
+    // Keyed off the model's RAW delta, not the normalized one. Normalization
+    // can turn a small positive into a negative share when everything rose
+    // together -- but the model still said this basin was engaged, and
+    // lastActive/conversationCount record engagement, not competition.
     if (bu.weight_delta > 0) {
       basin.lastActive = now;
       basin.conversationCount++;
@@ -188,12 +243,27 @@ export function applyUpdate(state: AttractorState, update: AttractorUpdate): Att
     pushTrajectory(basin);
   }
 
-  // --- Untouched basins: gentle decay toward dormancy ---
+  // --- Untouched basins: absorb their share of the redistribution ---
+  // No separate decay any more. An ignored basin is already losing meanDelta,
+  // which is the same pressure the mentioned ones are measured against, so the
+  // old drift toward a neutral resting weight would have double-counted it.
   const touched = new Set(update.basin_updates.map((bu) => bu.id));
   for (const basin of basins) {
     if (touched.has(basin.id)) continue;
-    basin.weight += (DECAY_TARGET - basin.weight) * DECAY_RATE;
+    basin.weight = Math.max(MIN_WEIGHT, Math.min(MAX_WEIGHT, basin.weight - meanDelta));
     pushTrajectory(basin);
+  }
+
+  // --- Mean reversion: keep the tails off both rails ---
+  // Applied after the trajectory push so the recorded point is the weight this
+  // update actually produced, not the compressed one -- the trend line should
+  // show what the conversation did, with compression as a slow separate force.
+  const meanWeight = basins.reduce((sum, b) => sum + b.weight, 0) / (basins.length || 1);
+  for (const basin of basins) {
+    basin.weight = Math.max(
+      MIN_WEIGHT,
+      Math.min(MAX_WEIGHT, basin.weight + (meanWeight - basin.weight) * REVERSION_RATE),
+    );
   }
 
   // --- Connections are symmetric ---
@@ -389,13 +459,39 @@ export function parseUpdate(text: string): AttractorUpdate {
 
 /** Consolidate after this many times filling the keyword slots, not the first. */
 export const CONSOLIDATE_AFTER_CAP_HITS = 2;
+/**
+ * How many times one basin may be abstracted, ever.
+ *
+ * Consolidation only ever pushes toward generality, and the update prompt shows
+ * the model each basin's current keywords -- so the next ingest imitates
+ * whatever register consolidation just set. That is a ratchet, and it is
+ * measurable: across 35 logged CLI runs, mean keyword length climbed from 2.0
+ * to 3.6 words with the model held constant at Opus 5. Unbounded, a basin ends
+ * up described in language too general to distinguish it from any other basin.
+ *
+ * 3 is chosen from that run: the climb was still informative through the third
+ * pass and mostly noise after it. The Worker path has never consolidated at
+ * all, which is why its keywords stayed concrete -- so this cap moves the CLI
+ * toward the Worker's behaviour rather than inventing a third one.
+ *
+ * The cost is real and deliberate: a capped basin falls back to eviction by
+ * recency in applyUpdate, so its keyword list drifts toward describing its last
+ * few conversations instead of its identity. That is the failure consolidation
+ * existed to prevent. Capping trades a slow loss of specificity for a slow loss
+ * of history, and the second is at least visible in the keywords themselves.
+ */
+export const MAX_CONSOLIDATIONS = 3;
 
 /** Target size after abstraction, leaving room to accumulate again. */
 const CONSOLIDATED_SIZE = 5;
 
 /** Basins whose keywords are due to be abstracted. */
 export function basinsNeedingConsolidation(state: AttractorState): Basin[] {
-  return state.basins.filter((b) => (b.capHits ?? 0) >= CONSOLIDATE_AFTER_CAP_HITS);
+  return state.basins.filter(
+    (b) =>
+      (b.capHits ?? 0) >= CONSOLIDATE_AFTER_CAP_HITS &&
+      (b.consolidationCount ?? 0) < MAX_CONSOLIDATIONS,
+  );
 }
 
 /**

@@ -114,6 +114,22 @@ This exists because the per-conversation update never prunes. Across 40 logged
 updates it proposed **115 keyword additions and 0 removals** — abstraction does
 not emerge from asking a local question, so it gets its own call.
 
+Consolidation is capped at **3 times per basin**. Uncapped it becomes a ratchet:
+the update prompt shows the model each basin's current keywords, so every ingest
+imitates whatever register the last consolidation set, and the next consolidation
+raises it again. Measured across 35 logged CLI runs with the model held constant
+at Opus 5, mean keyword length climbed from **2.0 to 3.6 words** — eventually
+every basin is described in language too general to tell it from any other. The
+hosted Worker never consolidates at all, which is why its keywords stay concrete.
+
+**Seed keywords set the register.** Because the model imitates the vocabulary it
+is shown, whatever you seed with anchors the whole history — and with
+consolidation capped, the system can only travel a bounded distance from it.
+Seeding `["assay", "api"]` produces a permanently more concrete attractor than
+seeding `["measurement-design", "trust-boundary-placement"]`. Write seeds at the
+level of abstraction you want the basins to still have after a hundred
+conversations.
+
 ### Other bounds
 
 | | |
@@ -201,8 +217,8 @@ npm install && npm run build
 
 cat > basins.json <<'EOF'
 [
-  { "label": "Research methodology", "description": "Study design, controls, what makes a result trustworthy", "keywords": ["assay", "controls"] },
-  { "label": "Systems design", "description": "Where state lives and how parts connect", "keywords": ["api", "storage"] }
+  { "label": "Research methodology", "description": "Study design, controls, what makes a result trustworthy", "keywords": ["measurement-design", "control-and-comparison"] },
+  { "label": "Systems design", "description": "Where state lives and how parts connect", "keywords": ["where-state-lives", "trust-boundary-placement"] }
 ]
 EOF
 
@@ -448,8 +464,8 @@ curl -X POST "$API/api/attractor/seed" \
   -H "Authorization: Bearer $ATTRACTOR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"basins":[
-        {"label":"Research methodology","description":"Study design, controls, what makes a result trustworthy","keywords":["assay","controls","replication"]},
-        {"label":"Systems architecture","description":"How components fit together and where state lives","keywords":["api","storage","interfaces"]}
+        {"label":"Research methodology","description":"Study design, controls, what makes a result trustworthy","keywords":["measurement-design","control-and-comparison","replication-as-evidence"]},
+        {"label":"Systems architecture","description":"How components fit together and where state lives","keywords":["where-state-lives","trust-boundary-placement","interface-contracts"]}
       ]}'
 ```
 

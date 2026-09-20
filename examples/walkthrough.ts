@@ -14,10 +14,27 @@ import {
 } from "../src/model";
 import type { AttractorUpdate } from "../src/types";
 
+// Seed keywords are not just a starting point -- the update prompt shows the
+// model each basin's current keywords, so it imitates their register from the
+// first conversation onward. Seeding with single words ("assay", "api") anchors
+// the whole history low. These are written at the level of abstraction the
+// basins should still be using after a hundred conversations.
 let state = createInitialState([
-  { label: "Research methodology", description: "Study design and controls", keywords: ["assay"] },
-  { label: "Systems architecture", description: "How components fit together", keywords: ["api"] },
-  { label: "Creative writing", description: "Prose and voice", keywords: ["draft"] },
+  {
+    label: "Research methodology",
+    description: "Study design and controls",
+    keywords: ["measurement-design", "control-and-comparison"],
+  },
+  {
+    label: "Systems architecture",
+    description: "How components fit together",
+    keywords: ["where-state-lives", "trust-boundary-placement"],
+  },
+  {
+    label: "Creative writing",
+    description: "Prose and voice",
+    keywords: ["voice-and-register", "revision-as-selection"],
+  },
 ]);
 
 const row = (label: string) =>
