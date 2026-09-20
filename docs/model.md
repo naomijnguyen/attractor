@@ -1,7 +1,32 @@
+<!--
+Title        The Model
+Purpose      How the attractor works: state, metrics, update cycle, and the
+             tuning constants. Read the correction notice below before using
+             any number in this file.
+Author       Jennifer Naomi Nguyen
+Canonical    docs/model.md in naomijnguyen/attractor -- authoritative for the
+             model's *shape*. It is NOT authoritative for the constants; see
+             the notice below.
+Updated      2026-09-20
+Dependencies none (prose)
+-->
+
 # The Model
 
 How the attractor works: state, metrics, update cycle, and every tuning
 constant. For setup and API usage see the [README](../README.md).
+
+> **2026-09-20 — the tuning constants below are superseded.** They describe the
+> decay model that let every basin saturate at 1.0. `src/model.ts` is the
+> authority, and `ARCHITECTURE.md` and `TECHNICAL.md` record why each value
+> changed. Superseded here: untouched basins drift toward 0.3 (they now revert
+> toward the *live mean* at `REVERSION_RATE = 0.04`); seed weight 0.5 (now
+> 0.35); new basins 0.4 (now 0.25). Zero-sum normalization and a per-basin
+> consolidation cap are new and are not described below at all.
+>
+> Left in place rather than rewritten, because the reasoning about *shape* --
+> emergence, dormancy, reactivation -- is still correct and still the clearest
+> statement of the intent. Only the numbers went stale.
 
 
 ---
