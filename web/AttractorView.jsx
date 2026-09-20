@@ -3,28 +3,68 @@ import { api } from "./useApi";
 
 // --- Color helpers ---
 
-// Bootwitch palette, copied from website-private/app/globals.css so this view
-// matches naomijnguyen.com when it is embedded there. Keep in sync by hand:
-// the two repos deploy separately and cannot share a stylesheet.
-const BRAND = {
-  dim: { r: 36, g: 247, b: 106, a: 0.34 },  // --bootwitch-green-dim
-  green: { r: 36, g: 247, b: 106 },          // --bootwitch-green
-  greenSoft: { r: 145, g: 255, b: 192 },     // --bootwitch-green-soft
-  orangeSoft: { r: 255, g: 179, b: 71 },     // --bootwitch-orange-soft
-  orange: { r: 255, g: 138, b: 0 },          // --bootwitch-orange
-  purple: { r: 199, g: 180, b: 255 },        // --bootwitch-purple
+// The palette is read from CSS custom properties so a host page can theme this
+// view without forking it. Defaults are deliberately brand-neutral: someone who
+// clones this repo should not inherit anyone's branding. naomijnguyen.com sets
+// the Bootwitch values in web/theme.css.
+const RAMP_DEFAULTS = {
+  "--attractor-dormant": "80,120,180",   // steel blue
+  "--attractor-low": "100,160,180",      // teal
+  "--attractor-mid": "200,170,80",       // amber
+  "--attractor-high": "220,130,90",      // coral
+  "--attractor-peak": "180,120,220",     // violet
+  "--attractor-label": "230,230,240",
+  "--attractor-grid": "255,255,255",
 };
 
+/**
+ * Resolve the palette once per render pass.
+ *
+ * Read at call time rather than at module load: the stylesheet may not have
+ * applied when this module is first evaluated, and a host can swap themes
+ * later. getComputedStyle is cheap enough at this frequency, and the cache
+ * below keeps it off the animation hot path.
+ */
+let rampCache = null;
+export function refreshPalette() {
+  rampCache = null;
+}
+function ramp() {
+  if (rampCache) return rampCache;
+  const css = typeof window !== "undefined" ? getComputedStyle(document.documentElement) : null;
+  const read = (name) => {
+    const raw = css?.getPropertyValue(name)?.trim();
+    const [r, g, b] = (raw || RAMP_DEFAULTS[name]).split(",").map((n) => Number(n.trim()));
+    return { r, g, b };
+  };
+  rampCache = {
+    dormant: read("--attractor-dormant"),
+    low: read("--attractor-low"),
+    mid: read("--attractor-mid"),
+    high: read("--attractor-high"),
+    peak: read("--attractor-peak"),
+    label: read("--attractor-label"),
+    grid: read("--attractor-grid"),
+  };
+  return rampCache;
+}
+
+// Font for canvas text, which cannot inherit from CSS the way the DOM chrome
+// does -- it has to be composed into a font shorthand string by hand.
+function canvasFont() {
+  const css = typeof window !== "undefined" ? getComputedStyle(document.documentElement) : null;
+  return css?.getPropertyValue("--attractor-font")?.trim() || "-apple-system, sans-serif";
+}
+
 function weightToColor(weight) {
-  // Green (dormant) -> orange (active) -> purple (dominant). The order is the
-  // brand's own accent hierarchy: green reads as ambient, orange as attention,
-  // purple as the thing to look at. Thresholds match the original ramp so the
-  // banding people are used to does not shift underneath them.
-  if (weight < 0.3) return BRAND.greenSoft;
-  if (weight < 0.5) return BRAND.green;
-  if (weight < 0.7) return BRAND.orangeSoft;
-  if (weight < 0.85) return BRAND.orange;
-  return BRAND.purple;
+  // Thresholds unchanged from the original ramp, so banding does not shift for
+  // anyone used to reading these graphs.
+  const p = ramp();
+  if (weight < 0.3) return p.dormant;
+  if (weight < 0.5) return p.low;
+  if (weight < 0.7) return p.mid;
+  if (weight < 0.85) return p.high;
+  return p.peak;
 }
 
 function colorStr({ r, g, b }, alpha = 1) {
@@ -275,9 +315,22 @@ export default function AttractorView({ onOpenSidebar }) {
       timer = setTimeout(apply, 150);
     };
 
+    // Observe the container, not the window. The canvas can be resized without
+    // the window changing at all: a webfont finishing load and reflowing the
+    // sibling panel, a sidebar opening, or the host page's grid responding to
+    // something else. Watching only `resize` left the simulation using stale
+    // bounds in every one of those cases, which draws nodes outside the canvas.
+    const observer = new ResizeObserver(handleResize);
+    if (containerRef.current) observer.observe(containerRef.current);
+
+    // Fonts settle after first paint and change the layout; re-measure once
+    // they do rather than waiting for an interaction.
+    document.fonts?.ready.then(apply).catch(() => {});
+
     window.addEventListener("resize", handleResize);
     return () => {
       clearTimeout(timer);
+      observer.disconnect();
       window.removeEventListener("resize", handleResize);
     };
   }, [initSimulation]);
@@ -302,7 +355,7 @@ export default function AttractorView({ onOpenSidebar }) {
       ctx.clearRect(0, 0, w, h);
 
       // Background subtle grid
-      ctx.strokeStyle = "rgba(255,255,255,0.02)";
+      ctx.strokeStyle = colorStr(ramp().grid, 0.02);
       ctx.lineWidth = 1;
       for (let x = 0; x < w / dpr; x += 40) {
         ctx.beginPath();
@@ -382,8 +435,8 @@ export default function AttractorView({ onOpenSidebar }) {
         }
 
         // Label
-        ctx.fillStyle = isHovered || isSelected ? "#fff" : "rgba(230,230,240,0.85)";
-        ctx.font = `${isHovered || isSelected ? "bold " : ""}${Math.max(10, Math.min(13, r * 0.6))}px -apple-system, sans-serif`;
+        ctx.fillStyle = isHovered || isSelected ? "#fff" : colorStr(ramp().label, 0.85);
+        ctx.font = `${isHovered || isSelected ? "bold " : ""}${Math.max(10, Math.min(13, r * 0.6))}px ${canvasFont()}`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
 
@@ -395,7 +448,7 @@ export default function AttractorView({ onOpenSidebar }) {
 
         // Weight percentage below
         ctx.fillStyle = "rgba(180,180,200,0.5)";
-        ctx.font = "9px -apple-system, sans-serif";
+        ctx.font = `9px ${canvasFont()}`;
         ctx.fillText(`${(node.weight * 100).toFixed(0)}%`, node.x, node.y + r + 12);
       }
 
