@@ -35,11 +35,10 @@ A React-based interactive framework mapping TNF superfamily signaling onto trans
 
 **Key insight:** Signal routing and local assembly principles from immunity directly inform how models might maintain coherent behavior under competing activation signals.
 
-**Files:**
-- [`docs/artifacts_docs/tnfsf-interactive.jsx`](docs/artifacts_docs/tnfsf-interactive.jsx) — React component with node-click interaction and view modes
-- [`docs/artifacts_docs/tnfsf-attention-rhyme.html`](docs/artifacts_docs/tnfsf-attention-rhyme.html)
-- [`docs/artifacts_docs/annotated-immunology-transformer-mapping.html`](docs/artifacts_docs/annotated-immunology-transformer-mapping.html)
-- [`docs/artifacts_docs/tls-attractor-hypothesis.html`](docs/artifacts_docs/tls-attractor-hypothesis.html)
+**Files:** the immunology artifacts behind this section -- the TNFSF attention
+rhyme, the annotated immunology/transformer mapping, and the TLS attractor
+hypothesis -- live in the private `attractor-research` repository. They are
+research notes rather than part of the demo, so they are not distributed here.
 
 ---
 
