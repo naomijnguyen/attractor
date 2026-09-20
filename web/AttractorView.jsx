@@ -2,13 +2,29 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "./useApi";
 
 // --- Color helpers ---
+
+// Bootwitch palette, copied from website-private/app/globals.css so this view
+// matches naomijnguyen.com when it is embedded there. Keep in sync by hand:
+// the two repos deploy separately and cannot share a stylesheet.
+const BRAND = {
+  dim: { r: 36, g: 247, b: 106, a: 0.34 },  // --bootwitch-green-dim
+  green: { r: 36, g: 247, b: 106 },          // --bootwitch-green
+  greenSoft: { r: 145, g: 255, b: 192 },     // --bootwitch-green-soft
+  orangeSoft: { r: 255, g: 179, b: 71 },     // --bootwitch-orange-soft
+  orange: { r: 255, g: 138, b: 0 },          // --bootwitch-orange
+  purple: { r: 199, g: 180, b: 255 },        // --bootwitch-purple
+};
+
 function weightToColor(weight) {
-  // Cool blue (dormant) → warm amber (active) → hot purple (dominant)
-  if (weight < 0.3) return { r: 80, g: 120, b: 180 };   // steel blue
-  if (weight < 0.5) return { r: 100, g: 160, b: 180 };  // teal
-  if (weight < 0.7) return { r: 200, g: 170, b: 80 };   // warm amber
-  if (weight < 0.85) return { r: 220, g: 130, b: 90 };   // coral
-  return { r: 180, g: 120, b: 220 };                      // violet
+  // Green (dormant) -> orange (active) -> purple (dominant). The order is the
+  // brand's own accent hierarchy: green reads as ambient, orange as attention,
+  // purple as the thing to look at. Thresholds match the original ramp so the
+  // banding people are used to does not shift underneath them.
+  if (weight < 0.3) return BRAND.greenSoft;
+  if (weight < 0.5) return BRAND.green;
+  if (weight < 0.7) return BRAND.orangeSoft;
+  if (weight < 0.85) return BRAND.orange;
+  return BRAND.purple;
 }
 
 function colorStr({ r, g, b }, alpha = 1) {
