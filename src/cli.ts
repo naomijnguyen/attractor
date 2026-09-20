@@ -32,6 +32,9 @@ import { listSessions, parseSession, toTranscript } from "./sessions";
 import { FileStore } from "./store";
 import { RunLog } from "./runs";
 import { describeDiff, isNoop, publishable, publishableHistory } from "./publish";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { writeFileSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import type { BasinSeed, RunRecord } from "./types";
 
@@ -327,12 +330,34 @@ async function fetchLive(site: string) {
  * granted, so no token has to exist anywhere.
  */
 function kvPut(config: string, namespaceId: string, key: string, value: string) {
-  const result = spawnSync(
-    "npx",
-    ["wrangler", "kv", "key", "put", key, value, "--namespace-id", namespaceId, "--config", config, "--remote"],
-    { stdio: ["ignore", "inherit", "inherit"] },
-  );
-  if (result.status !== 0) fail(`wrangler failed writing ${key}`);
+  // `--remote` exists only from wrangler 4. This repo resolves `npx wrangler`
+  // to 3.x, where remote IS the default and passing the flag is a hard yargs
+  // error -- which wrangler reports by printing its options list, so it reads
+  // like a usage mistake rather than a version mismatch. website-private has
+  // 4.x, so the same code path works there and fails here; detect instead of
+  // pinning, since the two repos are not going to be upgraded together.
+  const version = spawnSync("npx", ["wrangler", "--version"], { encoding: "utf8" }).stdout ?? "";
+  const major = Number(/(\d+)\./.exec(version)?.[1] ?? 0);
+  const remoteFlag = major >= 4 ? ["--remote"] : [];
+
+  // Via a temp file and --path rather than as a positional argv value: argv is
+  // readable by anything that can run `ps`, and the whole attractor state
+  // would otherwise sit there for the life of the call. This is not what was
+  // breaking the push -- that was the flag above -- it is just the safer form.
+  const file = join(tmpdir(), `attractor-${key.replace(/[^a-z0-9]/gi, "-")}-${process.pid}.json`);
+  writeFileSync(file, value, { mode: 0o600 });
+  try {
+    const result = spawnSync(
+      "npx",
+      ["wrangler", "kv", "key", "put", key, "--path", file, "--namespace-id", namespaceId, "--config", config, ...remoteFlag],
+      { stdio: ["ignore", "inherit", "inherit"] },
+    );
+    if (result.status !== 0) fail(`wrangler failed writing ${key} (wrangler ${version.trim() || "unknown"})`);
+  } finally {
+    // Runs even when fail() throws -- the state should not outlive the push in
+    // a world-readable temp directory.
+    rmSync(file, { force: true });
+  }
 }
 
 main().catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
