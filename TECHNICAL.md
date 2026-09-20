@@ -3,7 +3,7 @@ Title        Attractor technical reference
 Purpose      Operational reference — install, configuration, every endpoint and CLI command, deploy steps, and the known gotchas. Reach for this when running or deploying it.
 Author       Jennifer Naomi Nguyen
 Canonical    ~/Bootwitch/Projects/attractor/TECHNICAL.md — authoritative
-Updated      2026-09-16
+Updated      2026-09-20
 Dependencies Node 18+ (the CLI uses `node:crypto`, `node:fs/promises`, and a global `Response`). Local mode needs the `claude` binary on PATH. Hosted mode needs a Cloudflare account with KV + Queues, and an Anthropic API key.
 ---
 
@@ -369,6 +369,219 @@ responses in this codebase must do the same.
 | `Claude API error: 400 — ...deprecated` | a model rejected a parameter; the API's own message is surfaced deliberately |
 | `No text block in response` | the reply had only non-text blocks; the error lists the block types it did see |
 | Summary won't parse | the model wrapped JSON in prose. `ingest` exits; `compare` fails only that leg |
+
+---
+
+## 2026-09-20 — Dynamics constants and measured behaviour
+
+Appended, not merged. Nothing above this line was edited.
+
+**Read the attributions in this section as part of the claims.** Every number
+below came from one of exactly two places, and this document did not establish
+any of them:
+
+- **The run log** — `~/.attractor/runs.jsonl`, 35 records, every one
+  `engine: "cli"` and `model: "claude-opus-5"`. This is observational data from
+  real ingests. Statements sourced to it are *measurements*.
+- **The replay** — a harness that reimplements `applyUpdate`'s arithmetic
+  outside TypeScript so the constants can be varied, then replays the logged
+  deltas through it. Statements sourced to it are *simulations*, and they
+  inherit the assumption that the reimplementation is faithful. Its faithfulness
+  check is that it reproduces two saved state files exactly; see below.
+
+Where a line says "measured", it means the run log. Where it says "replay", it
+means the harness. Nothing here was observed by running the shipped TypeScript
+path end to end on live ingest.
+
+### Operational constants
+
+| Constant | Value | Where |
+|---|---|---|
+| `NORMALIZATION_STRENGTH` | `1` | `src/model.ts` |
+| `REVERSION_RATE` | `0.04` | `src/model.ts` |
+| `SEED_WEIGHT` | `0.35` | `src/model.ts` |
+| `NEW_BASIN_WEIGHT` | `0.25` | `src/model.ts` |
+| `MIN_WEIGHT` / `MAX_WEIGHT` | `0.05` / `1` | `src/model.ts` |
+| `MAX_DELTA` | `0.3` | `src/model.ts`, applied in `parseUpdate` |
+| `MAX_KEYWORDS` | `10` | `src/model.ts` |
+| `CONSOLIDATE_AFTER_CAP_HITS` | `2` | `src/model.ts` (exported) |
+| `MAX_CONSOLIDATIONS` | `3` | `src/model.ts` (exported) |
+| `ACTIVE_THRESHOLD` | `0.4` | `src/model.ts` — above this a basin appears in the injected prompt |
+
+`ARCHITECTURE.md`'s appended section of the same date explains *why* each value
+is what it is. This table is the lookup.
+
+### Measured from the run log
+
+Source: `~/.attractor/runs.jsonl`. Re-derived on 2026-09-20 by a Python pass
+over the file; the figures below are that pass's output, not a recollection.
+
+| Measurement | Value |
+|---|---|
+| Runs logged | 35 |
+| Engines represented | `cli` only — **no API run has ever been logged** |
+| Models represented | `claude-opus-5` only |
+| Weight deltas proposed | 126 |
+| …of which positive | 125 (one negative, none zero) |
+| Mean proposed delta | `+0.0570`, range `−0.02 … +0.18` |
+| Keyword additions | 255 |
+| Keyword removals | 22 |
+| `new_basin` proposals | 0 |
+| `phase_shift` proposals | 0 |
+| Mean keyword length, first 5 runs | 2.095 words (n=42) |
+| Mean keyword length, last 5 runs | 3.613 words (n=31) |
+| Register shift | **+72%**, with the model held constant at `claude-opus-5` |
+
+That last row is the measurement behind the consolidation cap: the system's own
+vocabulary drifted by 72% with nothing about the model changing.
+
+> **A note for anyone citing the `cli:`/`api:` transport control in `compare`:**
+> all 35 logged runs are `engine: "cli"`. The API leg has never appeared in
+> logged data. It is implemented; it is not verified. Do not describe it
+> otherwise.
+
+### An unresolved contradiction — left open deliberately
+
+The docstring on `buildConsolidatePrompt` in `src/model.ts` states that the
+per-conversation update is "purely additive in practice — across 40 logged
+updates it proposed 115 keyword additions and zero removals."
+
+The run log measures **255 additions and 22 removals** across 35 runs and 126
+basin updates.
+
+These do not agree, and **this pass did not resolve them.** The in-code figure
+cites "40 logged updates", which matches neither 35 runs nor 126 basin updates,
+so it plausibly describes a different window — an earlier log, or a different
+unit of counting — rather than being wrong. Both readings are live. The honest
+statement is that the "zero removals" claim is **not reproducible against the
+current log**, which is a weaker and truer thing than saying it is false.
+
+Resolving it needs whatever log the 115/40 figures were taken from. Until then,
+do not quote "zero keyword removals" as a current property of the system.
+
+### Replay: normalization sweep
+
+Source: the replay harness, replaying the 35 logged updates from seed `0.35`.
+
+**Precondition, which the in-code comment does not state:** these numbers only
+reproduce with **mean reversion disabled**. With reversion at its shipped `0.04`
+the sweep is muddied by the second force, so the sweep isolates normalization by
+switching reversion off. Quoting these figures as behaviour of the shipped
+configuration would be wrong.
+
+| `NORMALIZATION_STRENGTH` | Basins pinned at 1.0 | Entropy |
+|---|---|---|
+| `0.0` (no normalization) | 6 of 6 | `1.0000` |
+| `0.5` | 2 | `0.9834` |
+| `0.7` | 2 | `0.9582` |
+| `1.0` (shipped) | **0** | `0.8801` |
+
+The entropy column is the cautionary one: the *worst* row scores the *highest*
+entropy. See "Entropy cannot detect saturation" below.
+
+### Replay: reversion sweep
+
+Source: the replay harness at `NORMALIZATION_STRENGTH = 1`, over 105 updates
+(the 35-run log replayed three times) to expose long-run behaviour.
+
+| `REVERSION_RATE` | Min weight | Max weight |
+|---|---|---|
+| `0.00` (off) | `0.0500` — on the floor | `0.9617` |
+| `0.01` | `0.0541` | `0.9298` |
+| `0.02` | `0.0639` | `0.8651` |
+| `0.04` (shipped) | `0.1753` | `0.6331` |
+| `0.08` | `0.2207` | `0.4670` |
+
+`0.04` is the gentlest rate that keeps both rails clear. `0.08` over-compresses —
+the whole system lands inside a 0.25-wide band, which discards the spread the
+weights exist to express.
+
+> **Correction to a figure circulated earlier in this session:** rates `0.01`
+> and `0.02` were described as leaving basins "stuck at the 0.05 floor by 105
+> updates". That holds for `0.00` only. At `0.01` and `0.02` the minimum is
+> `0.0541` and `0.0639` — hovering just above the floor with no recovery, which
+> is still a failure, but it is not the floor.
+
+### Replay: the saved state was a code artifact
+
+This is the harness's own faithfulness check, and the strongest single result.
+
+Replaying the 126 logged deltas under the **old** constants — seed `0.5`, decay
+toward `0.3` at rate `0.05`, no normalization, no reversion — reproduces the
+previously saved state exactly:
+
+```
+systems-architecture           1.0000
+context-and-memory             1.0000
+developer-tooling              1.0000
+provenance-and-documentation   1.0000
+interface-and-visualization    0.8641
+research-and-evaluation        0.8390
+```
+
+Those are the values in `~/.attractor/state.pre-promotion-2026-09-20.json`,
+including `0.864` and `0.839`, to four decimal places.
+
+**What that establishes:** the saturated state was produced by the arithmetic,
+not by the conversations. It was never evidence about how anyone works. It had
+to be regenerated rather than patched, and it was — the current
+`~/.attractor/state.json` is the same 126 deltas replayed under the shipped
+constants, and the harness reproduces *that* file to four decimals too:
+
+```
+systems-architecture           0.1886      entropy 0.9625
+context-and-memory             0.4700      spread  0.3530
+developer-tooling              0.4845
+provenance-and-documentation   0.5416
+interface-and-visualization    0.3154
+research-and-evaluation        0.2351
+```
+
+Reproducing both files under their respective constants is what licenses the
+replay's other results. It is not proof the TypeScript path behaves identically
+under live ingest — only that the arithmetic matches.
+
+Under the old constants the first basin reaches `1.0` on update **7**, and four
+of six are pinned by update 35. Note "within ~8 updates" describes the **onset**
+of saturation, not its completion — it never reached all six.
+
+### Additions to *Known issues and gotchas*
+
+**Entropy cannot detect saturation.** `computeEntropy` divides weights by their
+sum before taking the Shannon entropy, which makes it scale-invariant: six
+basins all at `1.0` and six all at `0.3` both score `1.0000`. The fully
+saturated pre-regeneration state reads `0.9984` — essentially perfect. Any
+alarm, dashboard or health check built on entropy will miss the exact failure
+this change exists to prevent. Use `max(weight) − min(weight)`, or count basins
+sitting at `MAX_WEIGHT`.
+
+**`MAX_CONSOLIDATIONS` has never fired.** Four basins carry `consolidationCount`
+of 4 or 5, above the cap of 3 — they were produced before the cap existed and
+survived regeneration, which rebuilds weights rather than keyword history. The
+cap is implemented and reviewed; it is **not** demonstrated. Only a state built
+from scratch under the cap will exercise it.
+
+**Crossing the consolidation cap is silent.** No log line, no field, no counter
+distinguishes "this basin is being consolidated" from "this basin is now being
+evicted by recency because it hit the cap". `capHits` continuing to climb on a
+basin already at `consolidationCount = 3` is the only available symptom. A
+`consolidationCapped` boolean, or a single log line at the crossing, would make
+the fallback observable rather than inferred — suggested, not implemented.
+
+**The hosted Worker never consolidates.** `grep consolidat src/routes.ts`
+returns nothing; the branch exists only in `src/cli.ts`. A hosted attractor
+evicts keywords by recency forever. This is why hosted keywords stay concrete
+while CLI keywords drift general — a deployment difference, not a bug in either.
+
+**The web view scales visual weight by share of maximum, not absolutely.**
+`web/AttractorView.jsx` sets `weightScale = Math.max(0.01, ...weights)` once per
+loaded state, and both the colour ramp and the node radius divide by it. This is
+a consequence of zero-sum: under the shipped constants nothing reaches `1.0`, so
+absolute colour bands would render every basin in the same low band permanently.
+The `Math.max(0.01, …)` floor is a divide-by-zero guard for an empty or
+all-floor state, not a tuning value. Note that the *numeric* percentages the
+view prints are still the raw weight — the encoding is relative, the label is
+absolute — which is intentional but worth knowing before reading a screenshot.
 
 ---
 

@@ -3,7 +3,7 @@ Title        Attractor architecture
 Purpose      The shape of the system — components, seams, data flow, and why it is built this way. Read before changing anything structural.
 Author       Jennifer Naomi Nguyen
 Canonical    ~/Bootwitch/Projects/attractor/ARCHITECTURE.md — authoritative. A docs-only copy previously lived at ~/Projects/Anthropic/interpretability/attractor; it was superseded and did not move to the current project home.
-Updated      2026-09-16
+Updated      2026-09-20
 Dependencies none to read. To run what it describes: Node 18+, and either the `claude` binary on PATH (local mode) or a Cloudflare account + Anthropic API key (hosted mode).
 ---
 
@@ -315,6 +315,152 @@ free. The observed differences (one model treating the delta ceiling as a
 target, another surfacing emerging patterns where the first surfaces none) are
 reported in the README, with the caveat that one conversation and two runs each
 is an observation, not a result.
+
+---
+
+## 2026-09-20 — The weight dynamics as shipped
+
+This section is **appended, not merged**. Everything above it is left exactly as
+written, because a document that quietly rewrites itself loses the record of
+what was believed when. Where a statement above is now wrong, it is named here
+and superseded rather than deleted.
+
+Commit `b26b7f8` ("Stop the weights and the keywords from ratcheting") replaced
+the decay model with zero-sum normalization plus mean reversion, and capped
+keyword consolidation. That change is shipped and committed; this section brings
+the structural description into line with it.
+
+### What this section supersedes
+
+| Where | The earlier statement | Why it is now wrong |
+|---|---|---|
+| *The one idea…*, the safeguards list | "delta clamps, weight floor, decay" | There is no decay term. The safeguards are the delta clamp, the weight floor/ceiling, zero-sum normalization, and mean reversion. |
+| *Data flow*, the `applyUpdate` box | "untouched basins decay" | Untouched basins are not decayed. They absorb their share of the redistribution — they lose `meanDelta`, the same quantity the mentioned basins are measured against. The ASCII diagram itself is left as drawn; this row is the correction. |
+| *Components* | "`src/model.ts` is 445 lines" | It is **618** lines as of this date (`wc -l src/model.ts`). The claim "and is the project" still holds and is the part that mattered. |
+| *Why these shapes* | "untouched basins decay toward 0.3" | Replaced by mean reversion toward the **live** mean, not a fixed constant. |
+| *Why these shapes* | "Drift, not swing. Decay closes 5% of the gap per update — a half-life of about 13.5 updates. This is the single number to change…" | `DECAY_RATE` no longer exists. The nearest equivalent knob is `REVERSION_RATE = 0.04`, and it is **not** the single number to change: normalization and reversion do different jobs, and the section below says which is which. |
+| *Why these shapes* | "New basins start below neutral (0.4 vs. the seed's 0.5)" | The values are now 0.25 vs. a seed of 0.35. The *reason* — a late basin should arrive uncompetitive — is unchanged. |
+| *Components*, the `model.ts` line | "Entropy, trajectory, decay, clamps" | Same substitution: normalization and reversion in place of decay. |
+
+### A note on this file's `Canonical` header
+
+The header above names this file as authoritative and names a second, superseded
+docs-only copy. Two working copies of this repository exist on this machine:
+
+- `~/Bootwitch/Projects/attractor` — the one this file lives in, and the one
+  these appends were written against.
+- `~/Projects/Anthropic/attractor` — older mtimes, an older and smaller README,
+  and older versions of all four architecture documents.
+
+**Only the first was touched.** That restraint is deliberate and worth stating
+outright, because the temptation is to "helpfully" sync both. Which copy the
+`attractor` binary and the Cloudflare deploy actually resolve to has not been
+established here, and editing a copy you cannot prove is live is how two
+divergent authorities get created instead of one. Until someone checks what is
+actually imported and deployed, the second copy is **ambiguous, not dead** — it
+is flagged, not asserted.
+
+### The constants, and what each one is for
+
+Every value below is in `src/model.ts`, which carries the same reasoning inline.
+Where the code and this table disagree, the code wins.
+
+| Constant | Value | Why this value |
+|---|---|---|
+| `NORMALIZATION_STRENGTH` | `1` | Pure zero-sum. Anything less compounds: residual drift accumulates without bound, so there is no setting that saturates "only a little". Softening belongs in reversion instead. |
+| `REVERSION_RATE` | `0.04` | The gentlest pull that keeps both rails clear over a long replay without flattening the usable range. Targets the **live mean**, so it never fights the distribution the conversations produced — it only limits how far the tails can run. |
+| `SEED_WEIGHT` | `0.35` | Under zero-sum this is also the system's permanent mean, since updates redistribute rather than add. Sits just inside the "low" colour band, so a basin must earn its climb and has somewhere to fall. The old `0.5` opened the graph at its least informative. |
+| `NEW_BASIN_WEIGHT` | `0.25` | Below the mean on purpose: a basin that emerges later must earn its place rather than arrive level with the founders. |
+| `MAX_DELTA` | `0.3` | Clamped in `parseUpdate`, on what the model may *ask* for — before `applyUpdate` ever sees it. |
+| `MIN_WEIGHT` / `MAX_WEIGHT` | `0.05` / `1` | A basin goes dormant; it never dies. The floor being non-zero is what makes reactivation possible. |
+| `MAX_CONSOLIDATIONS` | `3` | A bound on how many times one basin may be abstracted, ever. See the ratchet below. |
+| `MAX_KEYWORDS` | `10` | Slot count per basin. Overflow increments `capHits` rather than triggering work, because `applyUpdate` must stay pure. |
+| `CONSOLIDATE_AFTER_CAP_HITS` | `2` | Consolidate on the second overflow, not the first — one overflow is noise. |
+
+### What each guard prevents, and what it costs
+
+A guard with no stated cost is a guard nobody will be able to reason about later.
+
+**Zero-sum normalization** prevents saturation. It makes reaching `1.0` require
+being dominant *relative to everything else*, rather than merely being mentioned
+often — which is a property of the conversation rather than of the arithmetic.
+
+> **Its cost, stated plainly:** weight no longer means "how active is this
+> basin" but "what share of attention does it hold". A phase in which all your
+> work intensifies together reads as **flat**. `phase` and `conversationCount`
+> carry the absolute story; weight does not, any more.
+
+**Mean reversion** prevents zero-sum's mirror failure. A basin that is
+consistently mentioned below average — ambient: present in most conversations,
+the subject of none — would otherwise sink to `MIN_WEIGHT` and stay there, which
+is exactly as uninformative as pinning at the ceiling.
+
+> **Its cost:** a genuinely dominant basin is permanently dragged back toward its
+> peers. Dominance shows up in the *trend*, not the *level*. It is also applied
+> **after** the trajectory point is recorded, so the recorded history shows what
+> the conversation did and keeps compression as a separate, slower force
+> underneath — an ordering that looks like a mistake until you know why.
+
+**The consolidation cap** prevents a ratchet. Consolidation only ever pushes
+toward generality, and `buildUpdatePrompt` shows the model each basin's current
+keywords — so the next ingest imitates whatever register the last consolidation
+set, and the next consolidation abstracts *that*. It turns one way only.
+
+> **Its cost, which is real and was accepted deliberately:** once
+> `consolidationCount` reaches 3, `basinsNeedingConsolidation` stops returning
+> that basin, but its keyword list keeps overflowing — so it falls back to
+> **eviction by recency** in `applyUpdate`, via `keywords.slice(-MAX_KEYWORDS)`.
+> Its keywords then drift toward describing its last few conversations rather
+> than its identity, which is precisely the failure consolidation was built to
+> prevent. The cap trades a slow loss of specificity for a slow loss of history,
+> on the grounds that the second is at least visible in the keywords themselves.
+>
+> **And it is silent.** There is no log line and no field marking the crossing.
+> A climbing `capHits` on a basin already at the cap is the only symptom.
+
+### Entropy is not a saturation alarm
+
+This belongs in the architecture document rather than a footnote, because it
+invalidates the obvious monitoring design.
+
+`computeEntropy` normalizes weights by their sum before taking the Shannon
+entropy — it has to, because weights are independent values in `[0.05, 1]` and
+not a probability distribution. The consequence is that the measure is
+**scale-invariant**: six basins all at `1.0` and six basins all at `0.3` both
+score exactly `1.0000`.
+
+So entropy cannot detect the failure this entire change exists to prevent. The
+fully saturated state reads as maximally healthy. Use `max(weight) − min(weight)`,
+or a count of basins sitting at `MAX_WEIGHT`, and treat entropy as what its own
+docstring says it is: a measure of how evenly attention is spread.
+
+### The hosted Worker does not consolidate
+
+`src/routes.ts` runs the same chain as the CLI **minus the consolidation
+branch** — `grep consolidat src/routes.ts` returns nothing. Consolidation lives
+only in `src/cli.ts`.
+
+This is the structural reason the two deployments diverge in character: the
+Worker's keywords stay concrete because nothing ever abstracts them, while the
+CLI's drift steadily more general. A hosted attractor evicts by recency forever.
+Known, documented, not fixed — and note that it means the cap moves the CLI
+*toward* the Worker's existing behaviour rather than inventing a third one.
+
+### One thing that is implemented but not demonstrated
+
+`MAX_CONSOLIDATIONS = 3` **has never fired.** No state in existence was produced
+under the cap; the basins carrying `consolidationCount` of 4 and 5 predate it.
+It is documented here as implemented, and should not be described as
+demonstrated until a state regenerated under the cap exercises it.
+
+### A pointer this file makes that is currently stale
+
+The header of this document and of `TECHNICAL.md` both send readers to
+`docs/model.md` as authoritative for the constants. **`docs/model.md` has not
+been updated for this change** — it still describes decay toward 0.3, a seed of
+0.5 and new basins at 0.4. That file is outside this pass's ownership and is
+flagged, not edited. Until it is corrected, the authoritative source for the
+numbers is `src/model.ts` itself.
 
 ---
 
