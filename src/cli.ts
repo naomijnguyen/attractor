@@ -31,6 +31,11 @@ import { renderComparison, renderHistory, renderRuns, renderSessions, renderStat
 import { listSessions, parseSession, toTranscript } from "./sessions";
 import { FileStore } from "./store";
 import { RunLog } from "./runs";
+import { describeDiff, isNoop, publishable, publishableHistory } from "./publish";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { writeFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import type { BasinSeed, RunRecord } from "./types";
 
 function fail(message: string): never {
@@ -262,8 +267,96 @@ async function main() {
       console.log(renderState(await requireState(store)));
       break;
 
+    case "push": {
+      // Two separate Cloudflare accounts hold the attractor Worker and the
+      // portfolio Worker, so a shared KV binding is not available. The state
+      // is copied across instead -- which is why there is a review step.
+      const namespace = process.env.ATTRACTOR_PUBLISH_NAMESPACE_ID;
+      const config = process.env.ATTRACTOR_PUBLISH_CONFIG;
+      const site = process.env.ATTRACTOR_PUBLISH_SITE ?? "https://naomijnguyen.com";
+      if (!namespace || !config) {
+        fail([
+          "Set both before pushing:",
+          "  ATTRACTOR_PUBLISH_NAMESPACE_ID   the portfolio's ATTRACTOR_KV id",
+          "  ATTRACTOR_PUBLISH_CONFIG         path to wrangler.portfolio.local.jsonc",
+        ].join("\n"));
+      }
+
+      const next = publishable(await requireState(store));
+      const live = await fetchLive(site);
+      const diff = describeDiff(live, next);
+      console.log(`Publishing to ${site}\n`);
+      console.log(diff);
+
+      if (isNoop(live, next)) break;
+      // --yes is opt-in rather than a prompt so this stays scriptable, but the
+      // diff always prints first: you never push something you have not seen.
+      if (!process.argv.includes("--yes")) {
+        console.log("\nDry run. Re-run with --yes to publish.");
+        break;
+      }
+
+      const history = publishableHistory(await store.history());
+      kvPut(config, namespace, "attractor:state", JSON.stringify(next));
+      kvPut(config, namespace, "attractor:history", JSON.stringify(history));
+      console.log(`\nPublished. ${site} now serves this state.`);
+      break;
+    }
+
     default:
-      fail(`Unknown command "${command}". Try: seed, ingest, sessions, compare, runs, show, history, context`);
+      fail(`Unknown command "${command}". Try: seed, ingest, sessions, compare, runs, show, history, context, push`);
+  }
+}
+
+/** What the portfolio currently serves, or null if it has never been pushed. */
+async function fetchLive(site: string) {
+  try {
+    const res = await fetch(`${site}/api/attractor`);
+    if (!res.ok) return null;
+    const body = (await res.json()) as { initialized?: boolean; state?: unknown };
+    return body.initialized ? (body.state as Awaited<ReturnType<typeof requireState>>) : null;
+  } catch {
+    // An unreachable site should not block the diff -- it just means every
+    // basin reads as new, which is honest about what the push would do.
+    return null;
+  }
+}
+
+/**
+ * Write one KV key through wrangler.
+ *
+ * Shelling out rather than adding a write endpoint to the portfolio: the site
+ * stays read-only in public, and auth is whatever `wrangler login` already
+ * granted, so no token has to exist anywhere.
+ */
+function kvPut(config: string, namespaceId: string, key: string, value: string) {
+  // `--remote` exists only from wrangler 4. This repo resolves `npx wrangler`
+  // to 3.x, where remote IS the default and passing the flag is a hard yargs
+  // error -- which wrangler reports by printing its options list, so it reads
+  // like a usage mistake rather than a version mismatch. website-private has
+  // 4.x, so the same code path works there and fails here; detect instead of
+  // pinning, since the two repos are not going to be upgraded together.
+  const version = spawnSync("npx", ["wrangler", "--version"], { encoding: "utf8" }).stdout ?? "";
+  const major = Number(/(\d+)\./.exec(version)?.[1] ?? 0);
+  const remoteFlag = major >= 4 ? ["--remote"] : [];
+
+  // Via a temp file and --path rather than as a positional argv value: argv is
+  // readable by anything that can run `ps`, and the whole attractor state
+  // would otherwise sit there for the life of the call. This is not what was
+  // breaking the push -- that was the flag above -- it is just the safer form.
+  const file = join(tmpdir(), `attractor-${key.replace(/[^a-z0-9]/gi, "-")}-${process.pid}.json`);
+  writeFileSync(file, value, { mode: 0o600 });
+  try {
+    const result = spawnSync(
+      "npx",
+      ["wrangler", "kv", "key", "put", key, "--path", file, "--namespace-id", namespaceId, "--config", config, ...remoteFlag],
+      { stdio: ["ignore", "inherit", "inherit"] },
+    );
+    if (result.status !== 0) fail(`wrangler failed writing ${key} (wrangler ${version.trim() || "unknown"})`);
+  } finally {
+    // Runs even when fail() throws -- the state should not outlive the push in
+    // a world-readable temp directory.
+    rmSync(file, { force: true });
   }
 }
 

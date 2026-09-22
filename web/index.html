@@ -1,0 +1,29 @@
+<!doctype html>
+<!--
+  Title        Standalone host page for <AttractorView />
+  Purpose      Gives the visualization somewhere to render locally. The component
+               is normally dropped into a larger app; this is the smallest host
+               that makes `npm run web` show something.
+  Author       Jennifer Naomi Nguyen
+  Canonical    /Users/jennifer/Bootwitch/Projects/attractor/web/index.html
+  Updated      2026-09-19
+  Dependencies Tailwind Play CDN (demo only — AttractorView uses ~70 utility
+               classes, and a CDN avoids adding a PostCSS build to this repo
+               just to look at a graph). Not for production.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Attractor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/theme.css" />
+    <style>
+      html, body, #root { height: 100%; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/main.jsx"></script>
+  </body>
+</html>

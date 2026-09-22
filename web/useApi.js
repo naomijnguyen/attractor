@@ -14,6 +14,11 @@ export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+/** Whether a token is stored. Exported so callers need not know the key. */
+export function hasToken() {
+  return Boolean(getToken());
+}
+
 function getToken() {
   try {
     return localStorage.getItem(TOKEN_KEY);
