@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Environment and secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Attractor state and logs — never commit; these contain conversation content
+data/
+.attractor/
+*.jsonl
+state.json
+runs.jsonl
+
+# Build output
+dist/
+build/
+.wrangler/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
